@@ -1,0 +1,63 @@
+package org.qualet.irlredactor.editor;
+
+import imgui.type.ImBoolean;
+import imgui.type.ImString;
+
+/**
+ * In-memory state of a single light source. Pure prototype data — not wired to
+ * any renderer or to IRLite. Trackpad values are kept in single-element float[]
+ * arrays so they can be passed directly to ImGui widgets.
+ */
+public class LightState
+{
+    public enum Type
+    {
+        POINT, SPOT
+    }
+
+    public final ImString name = new ImString("Light 1", 64);
+    public Type type = Type.POINT;
+
+    /** RGBA, 0..1. Set via the color picker. */
+    public final float[] color = {1f, 1f, 1f, 1f};
+
+    public final float[] intensity = {1f};      // 0..20
+    public final float[] radius    = {6f};      // 0.1..64   (point)
+    public final float[] range     = {12f};     // 0.1..128  (spot)
+    public final float[] angle     = {35f};     // 1..179    (spot)
+    public final float[] soft      = {10f};     // 0..60     (spot)
+    public final float[] beam      = {1f};      // 0..5
+    public final float[] density   = {0.05f};   // 0.005..0.5
+    public final float[] aniso     = {0.4f};    // -0.95..0.95
+    public final float[] bulb      = {0f};      // 0..2
+
+    /** Absolute world position (X/Y/Z). Driven by the placement group / LightSync. */
+    public final float[] pos = {0f, 0f, 0f};
+    /** Spot world-space direction (local +Z); normalized by the driver. Default down. */
+    public final float[] dir = {0f, -1f, 0f};
+
+    public final ImBoolean vol          = new ImBoolean(true);
+    public final ImBoolean shadows      = new ImBoolean(true);
+    public final ImBoolean entitiesOnly = new ImBoolean(false);
+    public final ImBoolean blocksOnly   = new ImBoolean(false);
+
+    /** Resets the visual parameters to defaults. Identity (name/type) and
+     *  placement (pos/dir) are preserved — this is the per-light "Сброс". */
+    public void reset()
+    {
+        color[0] = 1f; color[1] = 1f; color[2] = 1f; color[3] = 1f;
+        intensity[0] = 1f;
+        radius[0] = 6f;
+        range[0] = 12f;
+        angle[0] = 35f;
+        soft[0] = 10f;
+        beam[0] = 1f;
+        density[0] = 0.05f;
+        aniso[0] = 0.4f;
+        bulb[0] = 0f;
+        vol.set(true);
+        shadows.set(true);
+        entitiesOnly.set(false);
+        blocksOnly.set(false);
+    }
+}

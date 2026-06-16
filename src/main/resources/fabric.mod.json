@@ -1,0 +1,32 @@
+{
+    "schemaVersion": 1,
+    "id": "irl-redactor",
+    "version": "${version}",
+    "name": "IRL Redactor",
+    "description": "Standalone ImGui-based light editor (visual prototype).",
+    "authors": [
+        "qualet"
+    ],
+    "license": "MIT",
+    "environment": "*",
+    "entrypoints": {
+        "main": [
+            "org.qualet.irlredactor.IRLRedactorMod"
+        ],
+        "client": [
+            "org.qualet.irlredactor.client.IRLRedactorClient"
+        ]
+    },
+    "mixins": [
+        {
+            "config": "irl-redactor.client.mixins.json",
+            "environment": "client"
+        }
+    ],
+    "depends": {
+        "fabricloader": ">=0.15.0",
+        "minecraft": "~1.20.4",
+        "java": ">=17",
+        "fabric-api": "*"
+    }
+}

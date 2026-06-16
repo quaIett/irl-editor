@@ -1,0 +1,16 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "org.qualet.irlredactor.mixin.client",
+  "compatibilityLevel": "JAVA_17",
+  "client": [
+    "GameRendererLightMixin",
+    "WorldBlockChangeMixin",
+    "WorldBlockEntityTickersAccessor",
+    "iris.ProgramSamplersBuilderMixin",
+    "iris.SamplerBindingCubeArrayMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

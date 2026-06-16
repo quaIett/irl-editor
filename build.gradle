@@ -1,0 +1,92 @@
+plugins {
+	id 'fabric-loom' version '1.9-SNAPSHOT'
+	id 'maven-publish'
+}
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+	archivesName = project.archives_base_name
+}
+
+loom {
+	// Client-only GUI code lives in src/client; the main source set stays
+	// server-safe (just the ModInitializer stub).
+	splitEnvironmentSourceSets()
+
+	mods {
+		"irl-redactor" {
+			sourceSet sourceSets.main
+			sourceSet sourceSets.client
+		}
+	}
+}
+
+repositories {
+	// Iris + Sodium come from Modrinth's maven.
+	exclusiveContent {
+		forRepository {
+			maven {
+				name = "Modrinth"
+				url = "https://api.modrinth.com/maven"
+			}
+		}
+		filter {
+			includeGroup "maven.modrinth"
+		}
+	}
+	// glsl-transformer (io.github.douira), an Iris runtime dependency.
+	maven { url = "https://maven.gegy.dev/" }
+	mavenCentral()
+}
+
+// Dear ImGui (imgui-java by SpaiR). The editor GUI is rendered with ImGui, fully
+// decoupled from Minecraft's own GUI system and from BBS.
+def imguiVersion = '1.89.0'
+
+dependencies {
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+
+	// imgui-java: binding + LWJGL3 backend (client only). LWJGL itself is provided
+	// by Minecraft, so the backend's transitive LWJGL is excluded to avoid a second
+	// (conflicting) copy on the classpath.
+	clientImplementation "io.github.spair:imgui-java-binding:${imguiVersion}"
+	clientImplementation("io.github.spair:imgui-java-lwjgl3:${imguiVersion}") {
+		exclude group: 'org.lwjgl'
+	}
+	// JNI natives are runtime-only. Windows for dev; add -linux / -macos for release.
+	clientRuntimeOnly "io.github.spair:imgui-java-natives-windows:${imguiVersion}"
+
+	// --- IRLite lighting base (BBS-free port) ---
+	// Iris is referenced at compile time by the shadow-sampler mixins; Sodium is
+	// runtime-only. 1.20.4 ships LWJGL 3.3.3, so no LWJGL pin is needed.
+	modImplementation "maven.modrinth:iris:1.7.2+1.20.4"
+	modRuntimeOnly "maven.modrinth:sodium:mc1.20.4-0.5.8"
+
+	// Iris runtime dependencies (not auto-pulled from the Modrinth artifact).
+	modRuntimeOnly "org.anarres:jcpp:1.4.14"
+	modRuntimeOnly "io.github.douira:glsl-transformer:2.0.0-pre13"
+}
+
+processResources {
+	inputs.property "version", project.version
+	filesMatching("fabric.mod.json") {
+		expand "version": project.version
+	}
+}
+
+java {
+	sourceCompatibility = JavaVersion.VERSION_17
+	targetCompatibility = JavaVersion.VERSION_17
+	withSourcesJar()
+}
+
+jar {
+	from("LICENSE") {
+		rename { "${it}_${project.base.archivesName.get()}" }
+	}
+}
