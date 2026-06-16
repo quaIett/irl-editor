@@ -97,8 +97,8 @@ public class LightEditorPanel
 
             if (selected == null)
             {
-                Widgets.textDisabled("Нет источников.");
-                Widgets.textDisabled("Нажмите «Добавить».");
+                Widgets.textDisabled(Lang.t("irl-redactor.editor.empty1"));
+                Widgets.textDisabled(Lang.t("irl-redactor.editor.empty2"));
             }
             else
             {
@@ -114,7 +114,7 @@ public class LightEditorPanel
             engineGroup();
 
             ImGui.separator();
-            Widgets.textDisabled("IRLights · Все права защищены");
+            Widgets.textDisabled(Lang.t("irl-redactor.editor.footer"));
         }
 
         ImGui.end();
@@ -137,22 +137,22 @@ public class LightEditorPanel
 
     private void sourceList()
     {
-        Widgets.textDisabled("ИСТОЧНИКИ");
+        Widgets.textDisabled(Lang.t("irl-redactor.editor.sources"));
 
         float avail = ImGui.getContentRegionAvail().x;
         float btnW = (avail - 2f * ITEM_SP_X) / 3f;
 
-        if (Widgets.button("add", "Добавить", btnW, false))
+        if (Widgets.button("add", Lang.t("irl-redactor.editor.add"), btnW, false))
         {
             addLight();
         }
         ImGui.sameLine();
-        if (Widgets.button("dup", "Дублировать", btnW, false))
+        if (Widgets.button("dup", Lang.t("irl-redactor.editor.duplicate"), btnW, false))
         {
             duplicateSelected();
         }
         ImGui.sameLine();
-        if (Widgets.button("del", "Удалить", btnW, false))
+        if (Widgets.button("del", Lang.t("irl-redactor.editor.delete"), btnW, false))
         {
             deleteSelected();
         }
@@ -172,7 +172,8 @@ public class LightEditorPanel
                 for (int i = 0; i < all.size(); i++)
                 {
                     PlacedLight l = all.get(i);
-                    String type = l.type == PlacedLight.Type.SPOT ? "Прожектор" : "Точечный";
+                    String type = Lang.t(l.type == PlacedLight.Type.SPOT
+                        ? "irl-redactor.editor.type.spot" : "irl-redactor.editor.type.point");
                     if (Widgets.selectable("li_" + l.id, l.name, type, l == selected))
                     {
                         toSelect = l;
@@ -195,7 +196,7 @@ public class LightEditorPanel
         {
             l.x = eye.x; l.y = eye.y; l.z = eye.z;
         }
-        l.name = "Источник " + l.id;
+        l.name = Lang.t("irl-redactor.editor.sourceName", l.id);
         LightScene.add(l);
         selected = l;
     }
@@ -213,24 +214,28 @@ public class LightEditorPanel
         selected = l;
     }
 
+    // Matches a trailing "копия"/"copy" [N] tail in either provided language, so the
+    // word never piles up when duplicating (even across an in-game language switch).
     private static final java.util.regex.Pattern COPY_SUFFIX =
-        java.util.regex.Pattern.compile("^(.*?)\\s+копия(?:\\s+\\d+)?$");
+        java.util.regex.Pattern.compile("^(.*?)\\s+(?:копия|copy)(?:\\s+\\d+)?$",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
 
-    /** "света" -&gt; "света копия" -&gt; "света копия 2" -&gt; "света копия 3"…
-     *  Strips any stacked "копия [N]" tail first, so the word never piles up. */
+    /** "света" -&gt; "света копия" -&gt; "света копия 2"… (the suffix word follows the
+     *  game language). Strips any stacked copy tail first, so it never piles up. */
     private static String duplicateName(String name)
     {
-        String base = name == null ? "Источник" : name;
+        String base = name == null ? Lang.t("irl-redactor.editor.sourceBase") : name;
         java.util.regex.Matcher m;
         while ((m = COPY_SUFFIX.matcher(base)).matches() && !m.group(1).isEmpty())
         {
             base = m.group(1);
         }
 
-        String candidate = base + " копия";
+        String suffix = Lang.t("irl-redactor.editor.copySuffix");
+        String candidate = base + " " + suffix;
         for (int n = 2; nameExists(candidate); n++)
         {
-            candidate = base + " копия " + n;
+            candidate = base + " " + suffix + " " + n;
         }
         return candidate;
     }
@@ -285,12 +290,12 @@ public class LightEditorPanel
 
     private void header()
     {
-        Widgets.textDisabled("ИСТОЧНИК СВЕТА");
+        Widgets.textDisabled(Lang.t("irl-redactor.editor.lightSource"));
         ImGui.sameLine();
 
         float btnW = 56f;
         ImGui.setCursorPosX(ImGui.getWindowWidth() - btnW - WIN_PAD_X);
-        if (Widgets.button("reset", "Сброс", btnW, false))
+        if (Widgets.button("reset", Lang.t("irl-redactor.editor.reset"), btnW, false))
         {
             state.reset();
         }
@@ -299,12 +304,12 @@ public class LightEditorPanel
         ImGui.inputText("##name", state.name);
 
         float segW = (ImGui.getContentRegionAvail().x - ITEM_SP_X) * 0.5f;
-        if (Widgets.button("seg_point", "Точечный", segW, state.type == LightState.Type.POINT))
+        if (Widgets.button("seg_point", Lang.t("irl-redactor.editor.type.point"), segW, state.type == LightState.Type.POINT))
         {
             state.type = LightState.Type.POINT;
         }
         ImGui.sameLine();
-        if (Widgets.button("seg_spot", "Прожектор", segW, state.type == LightState.Type.SPOT))
+        if (Widgets.button("seg_spot", Lang.t("irl-redactor.editor.type.spot"), segW, state.type == LightState.Type.SPOT))
         {
             state.type = LightState.Type.SPOT;
         }
@@ -314,7 +319,7 @@ public class LightEditorPanel
 
     private void placementGroup()
     {
-        if (!Widgets.collapsingHeader("placement", "Размещение", true))
+        if (!Widgets.collapsingHeader("placement", Lang.t("irl-redactor.editor.placement"), true))
         {
             return;
         }
@@ -323,7 +328,7 @@ public class LightEditorPanel
         Widgets.dragValue("pos_y", "Y", state.pos, 1, 0.05f, "%.2f");
         Widgets.dragValue("pos_z", "Z", state.pos, 2, 0.05f, "%.2f");
 
-        if (Widgets.button("place_here", "Переместить сюда", ImGui.getContentRegionAvail().x, false))
+        if (Widgets.button("place_here", Lang.t("irl-redactor.editor.moveHere"), ImGui.getContentRegionAvail().x, false))
         {
             Vec3d eye = playerEye();
             if (eye != null)
@@ -336,9 +341,9 @@ public class LightEditorPanel
 
         if (state.type == LightState.Type.SPOT)
         {
-            Widgets.textDisabled(String.format(java.util.Locale.ROOT,
-                "Направление: %.2f / %.2f / %.2f", state.dir[0], state.dir[1], state.dir[2]));
-            if (Widgets.button("aim_look", "Навести по взгляду", ImGui.getContentRegionAvail().x, false))
+            Widgets.textDisabled(Lang.t("irl-redactor.editor.direction",
+                fmt(state.dir[0]), fmt(state.dir[1]), fmt(state.dir[2])));
+            if (Widgets.button("aim_look", Lang.t("irl-redactor.editor.aimLook"), ImGui.getContentRegionAvail().x, false))
             {
                 Vec3d look = playerLook();
                 if (look != null)
@@ -355,63 +360,63 @@ public class LightEditorPanel
 
     private void basicGroup()
     {
-        if (!Widgets.collapsingHeader("basic", "Основное", true))
+        if (!Widgets.collapsingHeader("basic", Lang.t("irl-redactor.editor.basic"), true))
         {
             return;
         }
 
-        Widgets.text("Цвет");
+        Widgets.text(Lang.t("irl-redactor.editor.color"));
         ImGui.sameLine();
         float swatchW = 46f;
         ImGui.setCursorPosX(ImGui.getCursorPosX() + ImGui.getContentRegionAvail().x - swatchW);
         ImGui.colorEdit4("##color", state.color, ImGuiColorEditFlags.NoInputs);
 
-        Widgets.trackpad("intensity", "Яркость", state.intensity, 0f, 20f, "%.2f");
+        Widgets.trackpad("intensity", Lang.t("irl-redactor.editor.intensity"), state.intensity, 0f, 20f, "%.2f");
 
         if (state.type == LightState.Type.POINT)
         {
-            Widgets.trackpad("radius", "Радиус", state.radius, 0.1f, 64f, "%.1f");
+            Widgets.trackpad("radius", Lang.t("irl-redactor.editor.radius"), state.radius, 0.1f, 64f, "%.1f");
         }
         else
         {
-            Widgets.trackpad("range", "Дальность", state.range, 0.1f, 128f, "%.1f");
-            Widgets.trackpad("angle", "Угол луча", state.angle, 1f, 179f, "%.0f°");
-            Widgets.trackpad("soft", "Мягкость края", state.soft, 0f, 60f, "%.0f°");
+            Widgets.trackpad("range", Lang.t("irl-redactor.editor.range"), state.range, 0.1f, 128f, "%.1f");
+            Widgets.trackpad("angle", Lang.t("irl-redactor.editor.angle"), state.angle, 1f, 179f, "%.0f°");
+            Widgets.trackpad("soft", Lang.t("irl-redactor.editor.soft"), state.soft, 0f, 60f, "%.0f°");
         }
     }
 
     private void volumetricGroup()
     {
-        if (!Widgets.collapsingHeader("vol", "Объёмные лучи", false))
+        if (!Widgets.collapsingHeader("vol", Lang.t("irl-redactor.editor.volumetric"), false))
         {
             return;
         }
 
-        Widgets.toggleRow("vol_on", "Включить", state.vol);
+        Widgets.toggleRow("vol_on", Lang.t("irl-redactor.editor.enable"), state.vol);
 
         ImGui.beginDisabled(!state.vol.get());
-        Widgets.trackpad("beam", "Сила лучей", state.beam, 0f, 5f, "%.2f");
-        Widgets.textDisabled("Тонкая настройка");
-        Widgets.trackpad("density", "Плотность", state.density, 0.005f, 0.5f, "%.3f");
-        Widgets.trackpad("aniso", "Направленность", state.aniso, -0.95f, 0.95f, "%.2f");
+        Widgets.trackpad("beam", Lang.t("irl-redactor.editor.beam"), state.beam, 0f, 5f, "%.2f");
+        Widgets.textDisabled(Lang.t("irl-redactor.editor.fineTune"));
+        Widgets.trackpad("density", Lang.t("irl-redactor.editor.density"), state.density, 0.005f, 0.5f, "%.3f");
+        Widgets.trackpad("aniso", Lang.t("irl-redactor.editor.aniso"), state.aniso, -0.95f, 0.95f, "%.2f");
         ImGui.endDisabled();
     }
 
     private void shadowGroup()
     {
-        if (!Widgets.collapsingHeader("shadows", "Тени и поведение", false))
+        if (!Widgets.collapsingHeader("shadows", Lang.t("irl-redactor.editor.shadowsBehavior"), false))
         {
             return;
         }
 
-        Widgets.toggleRow("shadows_on", "Тени", state.shadows);
-        Widgets.trackpad("bulb", "Мягкость тени", state.bulb, 0f, 2f, "%.2f");
+        Widgets.toggleRow("shadows_on", Lang.t("irl-redactor.editor.shadows"), state.shadows);
+        Widgets.trackpad("bulb", Lang.t("irl-redactor.editor.shadowSoft"), state.bulb, 0f, 2f, "%.2f");
 
-        if (Widgets.toggleRow("entities", "Только на entity", state.entitiesOnly) && state.entitiesOnly.get())
+        if (Widgets.toggleRow("entities", Lang.t("irl-redactor.editor.entitiesOnly"), state.entitiesOnly) && state.entitiesOnly.get())
         {
             state.blocksOnly.set(false);
         }
-        if (Widgets.toggleRow("blocks", "Только на блоки", state.blocksOnly) && state.blocksOnly.get())
+        if (Widgets.toggleRow("blocks", Lang.t("irl-redactor.editor.blocksOnly"), state.blocksOnly) && state.blocksOnly.get())
         {
             state.entitiesOnly.set(false);
         }
@@ -421,12 +426,12 @@ public class LightEditorPanel
 
     private void engineGroup()
     {
-        if (!Widgets.collapsingHeader("engine", "Настройки движка", false))
+        if (!Widgets.collapsingHeader("engine", Lang.t("irl-redactor.editor.engine"), false))
         {
             return;
         }
 
-        Widgets.text("Качество теней");
+        Widgets.text(Lang.t("irl-redactor.editor.shadowQuality"));
         String[] q = {"LOW", "MED", "HIGH", "ULTRA"};
         float segW = (ImGui.getContentRegionAvail().x - 3f * ITEM_SP_X) / 4f;
         for (int i = 0; i < q.length; i++)
@@ -441,20 +446,20 @@ public class LightEditorPanel
             }
         }
 
-        Widgets.toggleRow("cfg_cache", "Кэш теней", cfgCache);
+        Widgets.toggleRow("cfg_cache", Lang.t("irl-redactor.editor.shadowCache"), cfgCache);
         LightConfig.shadowCache = cfgCache.get();
 
-        Widgets.toggleRow("cfg_blocks", "Тени блоков", cfgBlocks);
+        Widgets.toggleRow("cfg_blocks", Lang.t("irl-redactor.editor.shadowBlocks"), cfgBlocks);
         LightConfig.shadowBlocks = cfgBlocks.get();
 
-        Widgets.trackpad("cfg_radius", "Радиус теней блоков", cfgRadius, 4f, 96f, "%.0f");
+        Widgets.trackpad("cfg_radius", Lang.t("irl-redactor.editor.shadowBlockRadius"), cfgRadius, 4f, 96f, "%.0f");
         LightConfig.shadowBlockRadius = Math.round(cfgRadius[0]);
 
-        Widgets.toggleRow("cfg_guides", "Показывать гайды", cfgGuides);
+        Widgets.toggleRow("cfg_guides", Lang.t("irl-redactor.editor.showGuides"), cfgGuides);
         LightConfig.showGuides = cfgGuides.get();
 
         ImGui.dummy(0f, 2f);
-        if (Widgets.button("open_patcher", "Патчер", ImGui.getContentRegionAvail().x, false))
+        if (Widgets.button("open_patcher", Lang.t("irl-redactor.patcher.title"), ImGui.getContentRegionAvail().x, false))
         {
             patcher.open();
         }
@@ -563,6 +568,12 @@ public class LightEditorPanel
     }
 
     // ---- world helpers -----------------------------------------------------
+
+    /** Locale-stable %.2f for the direction readout (avoids comma decimals). */
+    private static String fmt(float v)
+    {
+        return String.format(java.util.Locale.ROOT, "%.2f", v);
+    }
 
     private static Vec3d playerEye()
     {

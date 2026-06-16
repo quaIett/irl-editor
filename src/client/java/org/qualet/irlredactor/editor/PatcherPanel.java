@@ -59,7 +59,8 @@ public class PatcherPanel
     private int selPack = -1;
     private int selPatch = -1;
     private final ImBoolean newPackEachTime = new ImBoolean(false);
-    private String status = "Выберите шейдерпак и патч.";
+    // Translation key (not the resolved text) so the status re-localizes live.
+    private String statusKey = "irl-redactor.patcher.status.selectBoth";
 
     /** Request the popup to open on the next frame (from the editor's button). */
     public void open()
@@ -95,7 +96,7 @@ public class PatcherPanel
     private void content()
     {
         // --- title row + close ---------------------------------------------
-        Widgets.text("Патчер");
+        Widgets.text(Lang.t("irl-redactor.patcher.title"));
         ImGui.sameLine();
         float closeS = 18f;
         ImGui.setCursorPosX(ImGui.getCursorPosX() + ImGui.getContentRegionAvail().x - closeS);
@@ -106,13 +107,13 @@ public class PatcherPanel
         ImGui.separator();
 
         // --- shaderpacks ----------------------------------------------------
-        headerRow("Шейдерпаки", true);
+        headerRow(Lang.t("irl-redactor.patcher.shaderpacks"), true);
         selPack = fileList("packs", PACKS, selPack);
 
         ImGui.dummy(0f, 2f);
 
         // --- patches --------------------------------------------------------
-        headerRow("Патчи", false);
+        headerRow(Lang.t("irl-redactor.patcher.patches"), false);
         selPatch = fileList("patches", PATCHES, selPatch);
 
         // --- footer pinned to the bottom -----------------------------------
@@ -122,20 +123,20 @@ public class PatcherPanel
             ImGui.dummy(0f, avail - FOOTER_H);
         }
 
-        Widgets.toggleRow("patch_newpack", "Создавать новый пак каждый раз", newPackEachTime);
+        Widgets.toggleRow("patch_newpack", Lang.t("irl-redactor.patcher.newPackEachTime"), newPackEachTime);
 
         float bw = (ImGui.getContentRegionAvail().x - 8f) * 0.5f;
-        if (Widgets.primaryButton("patch_validate", "Проверить", bw))
+        if (Widgets.primaryButton("patch_validate", Lang.t("irl-redactor.patcher.validate"), bw))
         {
             onAction(true);
         }
         ImGui.sameLine(0f, 8f);
-        if (Widgets.primaryButton("patch_patch", "Патчить", bw))
+        if (Widgets.primaryButton("patch_patch", Lang.t("irl-redactor.patcher.patch"), bw))
         {
             onAction(false);
         }
 
-        Widgets.textDisabled(status);
+        Widgets.textDisabled(Lang.t(statusKey));
     }
 
     /** Validate / Patch are no-ops for now — report selection state, or that the
@@ -144,19 +145,21 @@ public class PatcherPanel
     {
         if (selPack < 0 && selPatch < 0)
         {
-            status = "Выберите шейдерпак и патч.";
+            statusKey = "irl-redactor.patcher.status.selectBoth";
         }
         else if (selPack < 0)
         {
-            status = "Выберите шейдерпак.";
+            statusKey = "irl-redactor.patcher.status.selectPack";
         }
         else if (selPatch < 0)
         {
-            status = "Выберите патч.";
+            statusKey = "irl-redactor.patcher.status.selectPatch";
         }
         else
         {
-            status = (validate ? "Проверка" : "Патч") + ": движок патчера ещё не перенесён.";
+            statusKey = validate
+                ? "irl-redactor.patcher.status.validateNotReady"
+                : "irl-redactor.patcher.status.patchNotReady";
         }
     }
 
