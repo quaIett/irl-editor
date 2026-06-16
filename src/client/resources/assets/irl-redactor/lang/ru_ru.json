@@ -54,6 +54,8 @@
     "irl-redactor.patcher.status.selectBoth": "Выберите шейдерпак и патч.",
     "irl-redactor.patcher.status.selectPack": "Выберите шейдерпак.",
     "irl-redactor.patcher.status.selectPatch": "Выберите патч.",
-    "irl-redactor.patcher.status.validateNotReady": "Проверка: движок патчера ещё не перенесён.",
-    "irl-redactor.patcher.status.patchNotReady": "Патч: движок патчера ещё не перенесён."
+    "irl-redactor.patcher.empty": "Нет файлов.",
+    "irl-redactor.patcher.meta.ops": "%d опер.",
+    "irl-redactor.patcher.meta.broken": "Сломанный патч: %s",
+    "irl-redactor.patcher.meta.mismatch": " — не подходит к выбранному паку!"
 }

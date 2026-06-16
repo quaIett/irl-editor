@@ -8,23 +8,41 @@ import imgui.flag.ImGuiCol;
 import imgui.flag.ImGuiCond;
 import imgui.flag.ImGuiWindowFlags;
 import imgui.type.ImBoolean;
+import org.qualet.irlredactor.patcher.IrlPatch;
+import org.qualet.irlredactor.patcher.IrlPatchApplier;
+import org.qualet.irlredactor.patcher.IrlPatchParser;
+import org.qualet.irlredactor.patcher.PatchLibrary;
+import org.qualet.irlredactor.patcher.PatchResult;
+import org.qualet.irlredactor.patcher.Shaderpacks;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
- * Shader-patcher popup — a centred modal that visually mirrors the original BBS /
- * IRLite patcher window (Shaderpacks list, Patches list, "create new pack each
- * time" toggle, Validate / Patch actions, status line) in the same flat BBS skin.
+ * Shader-patcher popup — a centred modal that mirrors the original BBS / IRLite
+ * patcher window (Shaderpacks list, Patches list, "create new pack each time"
+ * toggle, Validate / Patch actions, status line) in the flat BBS skin.
  *
- * <p><b>Visual prototype only.</b> The actual {@code .irlights} patcher has not been
- * ported into this mod yet (it is the remaining "Stage 3" work), so the lists hold
- * sample entries and the actions are no-ops that update the status line. Selection
- * and the toggle are live UI state, so the window feels real.</p>
+ * <p>The {@code .irlights} patcher core ({@link org.qualet.irlredactor.patcher})
+ * is wired up: the lists are populated live from Iris's shaderpack folder and the
+ * bundled patch library, Validate dry-runs every op against the selected pack
+ * (writing nothing), and Patch produces a fresh {@code *_IRLights} pack. The
+ * full per-op log goes to the {@code irl-redactor} logger; the modal shows a
+ * one-line coloured status.</p>
  */
 public class PatcherPanel
 {
+    private static final Logger LOG = LoggerFactory.getLogger("irl-redactor");
+
     private static final String POPUP_ID = "##irl_patcher";
 
     private static final float WIN_W = 440f;
-    private static final float WIN_H = 540f;
+    private static final float WIN_H = 560f;
     private static final float LIST_H = 150f;
     private static final float FOOTER_H = 84f;
     private static final float ICON = 20f;
@@ -36,31 +54,40 @@ public class PatcherPanel
     private static final int COL_LIST_BG   = ImColor.rgba(0x1b, 0x1b, 0x1b, 0xff);
     private static final int COL_SCROLL    = ImColor.rgba(0xe6, 0x2e, 0x8b, 0xff);
 
-    // Sample data (visual prototype — see class doc). Real listings come once the
-    // patcher core + the .irlights patches are ported.
-    private static final String[] PACKS = {
-        "Bliss_v2.1.2_(Chocapic13_Shaders_edit).zip",
-        "BSL_v10.1.3.zip",
-        "ComplementaryReimagined_r5.8.1.zip",
-        "IterationRP_v1.0.zip",
-        "photon_v1.3b.zip",
-        "solas_v2.1.zip",
-    };
-    private static final String[] PATCHES = {
-        "bliss.irlights",
-        "bsl.irlights",
-        "complementaryreimagined.irlights",
-        "iterationrp.irlights",
-        "photon.irlights",
-        "solas.irlights",
-    };
+    // Status / meta colours (0xRRGGBB).
+    private static final int RGB_OK   = 0x55FF55;
+    private static final int RGB_ERR  = 0xFF5555;
+    private static final int RGB_META = 0xAAAAAA;
+    private static final int RGB_WARN = 0xFFAA33;
 
     private boolean wantOpen;
+
+    // Live listings (loaded on open + the refresh icon).
+    private List<String> packs = List.of();
+    private List<Path> patches = List.of();
+    private List<String> patchLabels = List.of();
+
     private int selPack = -1;
     private int selPatch = -1;
+
     private final ImBoolean newPackEachTime = new ImBoolean(false);
-    // Translation key (not the resolved text) so the status re-localizes live.
+
+    // Parsed metadata of the selected patch, cached on selection change (a patch
+    // file is tens of KB — never re-parse per frame). Composed into the meta line
+    // each frame so it re-localizes live on a language switch.
+    private int parsedPatch = -1;
+    private boolean patchBroken;
+    private String patchError = "";
+    private String patchName = "";
+    private String patchTarget = "";
+    private String patchVersion = "";
+    private int patchOps;
+
+    // Status line: a localized guard key (statusText == null) OR a raw engine
+    // summary (statusText != null, shown coloured by statusOk).
     private String statusKey = "irl-redactor.patcher.status.selectBoth";
+    private String statusText;
+    private boolean statusOk = true;
 
     /** Request the popup to open on the next frame (from the editor's button). */
     public void open()
@@ -73,6 +100,7 @@ public class PatcherPanel
     {
         if (wantOpen)
         {
+            reload();
             ImGui.openPopup(POPUP_ID);
             wantOpen = false;
         }
@@ -107,14 +135,17 @@ public class PatcherPanel
         ImGui.separator();
 
         // --- shaderpacks ----------------------------------------------------
-        headerRow(Lang.t("irl-redactor.patcher.shaderpacks"), true);
-        selPack = fileList("packs", PACKS, selPack);
+        headerRow(Lang.t("irl-redactor.patcher.shaderpacks"), this::reload, Shaderpacks::openFolder);
+        selPack = fileList("packs", packs, selPack);
 
         ImGui.dummy(0f, 2f);
 
         // --- patches --------------------------------------------------------
-        headerRow(Lang.t("irl-redactor.patcher.patches"), false);
-        selPatch = fileList("patches", PATCHES, selPatch);
+        headerRow(Lang.t("irl-redactor.patcher.patches"), null, PatchLibrary::openFolder);
+        selPatch = fileList("patches", patchLabels, selPatch);
+
+        // --- selected-patch metadata ---------------------------------------
+        metaLine();
 
         // --- footer pinned to the bottom -----------------------------------
         float avail = ImGui.getContentRegionAvail().y;
@@ -136,38 +167,259 @@ public class PatcherPanel
             onAction(false);
         }
 
-        Widgets.textDisabled(Lang.t(statusKey));
+        statusLine();
     }
 
-    /** Validate / Patch are no-ops for now — report selection state, or that the
-     *  patcher engine isn't wired up yet. */
+    // ---- listings ----------------------------------------------------------
+
+    /** (Re)reads the shaderpack + patch listings, preserving the current selection by value. */
+    private void reload()
+    {
+        String keepPack = selPack >= 0 && selPack < packs.size() ? packs.get(selPack) : null;
+        Path keepPatch = selPatch >= 0 && selPatch < patches.size() ? patches.get(selPatch) : null;
+
+        packs = Shaderpacks.list();
+        patches = PatchLibrary.list();
+
+        List<String> labels = new ArrayList<>(patches.size());
+        for (Path p : patches)
+        {
+            labels.add(p.getFileName().toString());
+        }
+        patchLabels = labels;
+
+        selPack = keepPack == null ? -1 : packs.indexOf(keepPack);
+        selPatch = keepPatch == null ? -1 : patches.indexOf(keepPatch);
+        parsedPatch = -1; // force the meta cache to refresh
+    }
+
+    // ---- selected-patch metadata ------------------------------------------
+
+    /** Parses the selected patch once on selection change; renders the meta line each frame. */
+    private void metaLine()
+    {
+        if (selPatch != parsedPatch)
+        {
+            parseSelectedPatch();
+        }
+
+        if (selPatch < 0)
+        {
+            ImGui.dummy(0f, ImGui.getTextLineHeight());
+            return;
+        }
+
+        if (patchBroken)
+        {
+            Widgets.textColored(Lang.t("irl-redactor.patcher.meta.broken", patchError), RGB_ERR);
+            return;
+        }
+
+        String text = (patchName.isEmpty() ? patchLabels.get(selPatch) : patchName)
+            + " → " + (patchTarget.isEmpty() ? "?" : patchTarget)
+            + (patchVersion.isEmpty() ? "" : " " + patchVersion)
+            + "  (" + Lang.t("irl-redactor.patcher.meta.ops", patchOps) + ")";
+
+        String pack = selPack >= 0 && selPack < packs.size() ? packs.get(selPack) : null;
+        if (pack != null && !patchTarget.isEmpty() && !packMatchesTarget(pack, patchTarget))
+        {
+            Widgets.textColored(text + Lang.t("irl-redactor.patcher.meta.mismatch"), RGB_WARN);
+        }
+        else
+        {
+            Widgets.textColored(text, RGB_META);
+        }
+    }
+
+    /** Caches the selected patch's fields; auto-selects the single matching pack when none is chosen. */
+    private void parseSelectedPatch()
+    {
+        parsedPatch = selPatch;
+        patchBroken = false;
+        patchError = "";
+        patchName = "";
+        patchTarget = "";
+        patchVersion = "";
+        patchOps = 0;
+
+        if (selPatch < 0 || selPatch >= patches.size())
+        {
+            return;
+        }
+
+        IrlPatch parsed;
+        try
+        {
+            parsed = IrlPatchParser.parse(Files.readString(patches.get(selPatch), StandardCharsets.UTF_8));
+        }
+        catch (Exception e)
+        {
+            patchBroken = true;
+            patchError = e.getMessage();
+            return;
+        }
+
+        patchName = parsed.name;
+        patchTarget = parsed.target;
+        patchVersion = parsed.packVersion;
+        patchOps = parsed.ops.size();
+
+        // No pack chosen yet: if exactly one pack matches the patch's @target, pick it.
+        if (selPack < 0 && !patchTarget.isEmpty())
+        {
+            int match = -1;
+            for (int i = 0; i < packs.size(); i++)
+            {
+                if (packMatchesTarget(packs.get(i), patchTarget))
+                {
+                    if (match >= 0)
+                    {
+                        match = -1;
+                        break;
+                    }
+                    match = i;
+                }
+            }
+            if (match >= 0)
+            {
+                selPack = match;
+            }
+        }
+    }
+
+    /** "Photon_v1.2.zip" matches target "Photon": lowercase, alphanumerics only, substring. */
+    private static boolean packMatchesTarget(String pack, String target)
+    {
+        String p = norm(pack);
+        String t = norm(target);
+        return t.isEmpty() || p.contains(t);
+    }
+
+    private static String norm(String s)
+    {
+        String lower = s.toLowerCase();
+        if (lower.endsWith(".zip"))
+        {
+            lower = lower.substring(0, lower.length() - 4);
+        }
+        return lower.replaceAll("[^a-z0-9]", "");
+    }
+
+    // ---- Validate / Patch --------------------------------------------------
+
     private void onAction(boolean validate)
     {
         if (selPack < 0 && selPatch < 0)
         {
-            statusKey = "irl-redactor.patcher.status.selectBoth";
+            setGuard("irl-redactor.patcher.status.selectBoth");
+            return;
         }
-        else if (selPack < 0)
+        if (selPack < 0)
         {
-            statusKey = "irl-redactor.patcher.status.selectPack";
+            setGuard("irl-redactor.patcher.status.selectPack");
+            return;
         }
-        else if (selPatch < 0)
+        if (selPatch < 0)
         {
-            statusKey = "irl-redactor.patcher.status.selectPatch";
+            setGuard("irl-redactor.patcher.status.selectPatch");
+            return;
+        }
+
+        IrlPatch parsed;
+        try
+        {
+            parsed = IrlPatchParser.parse(Files.readString(patches.get(selPatch), StandardCharsets.UTF_8));
+        }
+        catch (Exception e)
+        {
+            setResult(false, "Parse error: " + e.getMessage());
+            return;
+        }
+
+        String packName = packs.get(selPack);
+        if (validate)
+        {
+            PatchResult result = IrlPatchApplier.validate(Shaderpacks.packPath(packName), parsed);
+            logResult("validate", result);
+            setResult(result.ok, result.summary);
         }
         else
         {
-            statusKey = validate
-                ? "irl-redactor.patcher.status.validateNotReady"
-                : "irl-redactor.patcher.status.patchNotReady";
+            Path source = Shaderpacks.packPath(packName);
+            Path output = Shaderpacks.dir().resolve(outputName(packName));
+            PatchResult result = IrlPatchApplier.apply(source, output, parsed);
+            logResult("patch", result);
+            setResult(result.ok, result.summary);
+            reload(); // a newly created patched pack should show up
+        }
+    }
+
+    private String outputName(String packName)
+    {
+        String base = packName;
+        if (base.toLowerCase().endsWith(".zip"))
+        {
+            base = base.substring(0, base.length() - 4);
+        }
+        base = base + "_IRLights";
+
+        if (!newPackEachTime.get())
+        {
+            return base;
+        }
+        if (!Files.exists(Shaderpacks.dir().resolve(base)))
+        {
+            return base;
+        }
+        for (int i = 2; i < 1000; i++)
+        {
+            String candidate = base + "_" + i;
+            if (!Files.exists(Shaderpacks.dir().resolve(candidate)))
+            {
+                return candidate;
+            }
+        }
+        return base;
+    }
+
+    private static void logResult(String tag, PatchResult result)
+    {
+        for (String line : result.log)
+        {
+            LOG.info("[{}] {}", tag, line);
+        }
+    }
+
+    private void setGuard(String key)
+    {
+        statusKey = key;
+        statusText = null;
+        statusOk = true;
+    }
+
+    private void setResult(boolean ok, String message)
+    {
+        statusText = message;
+        statusOk = ok;
+    }
+
+    private void statusLine()
+    {
+        if (statusText != null)
+        {
+            Widgets.textColored(statusText, statusOk ? RGB_OK : RGB_ERR);
+        }
+        else
+        {
+            Widgets.textDisabled(Lang.t(statusKey));
         }
     }
 
     // ---- list of files -----------------------------------------------------
 
-    /** A bordered, scrollable list of file names; returns the (possibly updated)
-     *  selected index. Magenta scrollbar + darker background to match the prototype. */
-    private int fileList(String id, String[] items, int selected)
+    /** A bordered, scrollable list of names; returns the (possibly updated) selected index.
+     *  Magenta scrollbar + darker background to match the prototype. */
+    private int fileList(String id, List<String> items, int selected)
     {
         ImGui.pushStyleColor(ImGuiCol.ChildBg, COL_LIST_BG);
         ImGui.pushStyleColor(ImGuiCol.ScrollbarGrab, COL_SCROLL);
@@ -177,9 +429,13 @@ public class PatcherPanel
         int result = selected;
         if (ImGui.beginChild("##list_" + id, 0f, LIST_H, true))
         {
-            for (int i = 0; i < items.length; i++)
+            if (items.isEmpty())
             {
-                if (Widgets.listItem(id + "_" + i, items[i], i == selected))
+                Widgets.textDisabled(Lang.t("irl-redactor.patcher.empty"));
+            }
+            for (int i = 0; i < items.size(); i++)
+            {
+                if (Widgets.listItem(id + "_" + i, items.get(i), i == selected))
                 {
                     result = i;
                 }
@@ -193,21 +449,27 @@ public class PatcherPanel
 
     // ---- header row with right-aligned icon buttons ------------------------
 
-    private void headerRow(String title, boolean withRefresh)
+    private void headerRow(String title, Runnable onRefresh, Runnable onFolder)
     {
         Widgets.text(title);
         ImGui.sameLine();
 
-        int n = withRefresh ? 2 : 1;
+        int n = onRefresh != null ? 2 : 1;
         float iconsW = n * ICON + (n - 1) * ICON_SP;
         ImGui.setCursorPosX(ImGui.getCursorPosX() + ImGui.getContentRegionAvail().x - iconsW);
 
-        if (withRefresh)
+        if (onRefresh != null)
         {
-            refreshIcon("ic_refresh_" + title);
+            if (refreshIcon("ic_refresh_" + title))
+            {
+                onRefresh.run();
+            }
             ImGui.sameLine(0f, ICON_SP);
         }
-        folderIcon("ic_folder_" + title);
+        if (folderIcon("ic_folder_" + title))
+        {
+            onFolder.run();
+        }
     }
 
     // ---- icon buttons (drawn via the draw list) ----------------------------

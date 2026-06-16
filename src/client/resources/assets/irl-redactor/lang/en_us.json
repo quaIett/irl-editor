@@ -54,6 +54,8 @@
     "irl-redactor.patcher.status.selectBoth": "Select a shaderpack and a patch.",
     "irl-redactor.patcher.status.selectPack": "Select a shaderpack.",
     "irl-redactor.patcher.status.selectPatch": "Select a patch.",
-    "irl-redactor.patcher.status.validateNotReady": "Validate: the patcher engine is not ported yet.",
-    "irl-redactor.patcher.status.patchNotReady": "Patch: the patcher engine is not ported yet."
+    "irl-redactor.patcher.empty": "No files.",
+    "irl-redactor.patcher.meta.ops": "%d ops",
+    "irl-redactor.patcher.meta.broken": "Broken patch: %s",
+    "irl-redactor.patcher.meta.mismatch": " — does not match the selected pack!"
 }

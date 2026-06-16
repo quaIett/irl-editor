@@ -84,6 +84,13 @@ public final class Widgets
         emitText(s, COL_DIM, COL_DIM_SH);
     }
 
+    /** Shadowed label in an explicit {@code 0xRRGGBB} colour (patcher meta / status lines). */
+    public static void textColored(String s, int rgb)
+    {
+        int color = ImColor.rgba((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF, 0xFF);
+        emitText(s, color, COL_DIM_SH);
+    }
+
     private static void emitText(String s, int color, int shadow)
     {
         ImVec2 pos = ImGui.getCursorScreenPos();
