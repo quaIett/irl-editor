@@ -43,6 +43,9 @@ public class LightEditorPanel
     private static final float LIST_ROW_H = 28f;
     private static final int LIST_VISIBLE_ROWS = 6;
 
+    /** Shader-patcher popup (visual prototype; opened from the engine settings). */
+    private final PatcherPanel patcher = new PatcherPanel();
+
     /** ImGui scratch mirrored to/from the selected light. */
     private final LightState state = new LightState();
     /** Currently edited light (null when the scene is empty / nothing selected). */
@@ -124,6 +127,10 @@ public class LightEditorPanel
             drawGizmo();
             LightSync.push(state, selected);
         }
+
+        // Rendered at the root (after the panel's end) so the modal sits on top
+        // of the panel and dims the world behind it.
+        patcher.draw();
     }
 
     // ---- source list (Phase B) --------------------------------------------
@@ -445,6 +452,12 @@ public class LightEditorPanel
 
         Widgets.toggleRow("cfg_guides", "Показывать гайды", cfgGuides);
         LightConfig.showGuides = cfgGuides.get();
+
+        ImGui.dummy(0f, 2f);
+        if (Widgets.button("open_patcher", "Патчер", ImGui.getContentRegionAvail().x, false))
+        {
+            patcher.open();
+        }
     }
 
     // ---- move gizmo --------------------------------------------------------

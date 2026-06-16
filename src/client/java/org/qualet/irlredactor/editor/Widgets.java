@@ -48,6 +48,15 @@ public final class Widgets
     private static final int COL_BTN_TEXT  = ImColor.rgba(0xc4, 0xc4, 0xc4, 0xff);
     private static final int COL_BTN_TX_SH = ImColor.rgba(0x30, 0x30, 0x30, 0xff);
 
+    // Magenta "primary" call-to-action button (Validate / Patch in the patcher),
+    // matching the prototype: solid accent fill with dark text.
+    private static final int COL_PRIMARY      = ImColor.rgba(0xe6, 0x2e, 0x8b, 0xff);
+    private static final int COL_PRIMARY_HOV  = ImColor.rgba(0xf0, 0x4a, 0x9e, 0xff);
+    private static final int COL_PRIMARY_TEXT = ImColor.rgba(0x1c, 0x1c, 0x1c, 0xff);
+
+    // Plain list row (no per-row box) for the patcher's file lists.
+    private static final int COL_ROW_HOVER = ImColor.rgba(0x2e, 0x2e, 0x2e, 0xff);
+
     private static final int COL_HEADER    = ImColor.rgba(0x20, 0x20, 0x20, 0xff);
     private static final int COL_TRI       = ImColor.rgba(0x6f, 0x6f, 0x6f, 0xff);
 
@@ -108,6 +117,56 @@ public final class Widgets
         {
             shadowText(dl, tx, ty, COL_BTN_TEXT, COL_BTN_TX_SH, label);
         }
+
+        return clicked;
+    }
+
+    /** Solid-accent call-to-action button with dark text (patcher Validate / Patch). */
+    public static boolean primaryButton(String id, String label, float width)
+    {
+        float height = ImGui.getTextLineHeight() + 12f;
+        ImVec2 pos = ImGui.getCursorScreenPos();
+
+        ImGui.invisibleButton("##" + id, width, height);
+        boolean clicked = ImGui.isItemClicked();
+
+        int bg = ImGui.isItemHovered() ? COL_PRIMARY_HOV : COL_PRIMARY;
+        ImDrawList dl = ImGui.getWindowDrawList();
+        dl.addRectFilled(pos.x, pos.y, pos.x + width, pos.y + height, bg);
+
+        ImVec2 ts = ImGui.calcTextSize(label);
+        float tx = pos.x + (width - ts.x) * 0.5f;
+        float ty = pos.y + (height - ImGui.getTextLineHeight()) * 0.5f;
+        dl.addText(tx, ty, COL_PRIMARY_TEXT, label);
+
+        return clicked;
+    }
+
+    /** Plain list entry: transparent at rest, subtle box on hover, accent fill when
+     *  selected (the patcher's file rows — no per-row box like {@link #selectable}). */
+    public static boolean listItem(String id, String label, boolean selected)
+    {
+        float width = ImGui.getContentRegionAvail().x;
+        float height = 22f;
+        ImVec2 pos = ImGui.getCursorScreenPos();
+
+        ImGui.invisibleButton("##" + id, width, height);
+        boolean clicked = ImGui.isItemClicked();
+
+        ImDrawList dl = ImGui.getWindowDrawList();
+        if (selected)
+        {
+            dl.addRectFilled(pos.x, pos.y, pos.x + width, pos.y + height, COL_ACCENT);
+        }
+        else if (ImGui.isItemHovered())
+        {
+            dl.addRectFilled(pos.x, pos.y, pos.x + width, pos.y + height, COL_ROW_HOVER);
+        }
+
+        float textY = pos.y + (height - ImGui.getTextLineHeight()) * 0.5f;
+        shadowText(dl, pos.x + 6f, textY,
+            selected ? COL_VALUE : COL_LABEL,
+            selected ? COL_VALUE_SH : COL_LABEL_SH, label);
 
         return clicked;
     }
