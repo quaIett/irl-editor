@@ -49,8 +49,17 @@ public class LightEditorScreen extends Screen
     protected void applyBlur(DrawContext context)
     {
         // 1.21.x blurs the world behind an open screen; skip it so the light editor
-        // keeps a clear view of the scene it is editing. The slight darkening from
-        // renderDarkening still applies (matching the 1.20.4 look).
+        // keeps a clear view of the scene it is editing.
+    }
+
+    @Override
+    protected void renderDarkening(DrawContext context)
+    {
+        // Skip the in-world dark overlay too (Screen#renderBackground tiles
+        // INWORLD_MENU_BACKGROUND_TEXTURE over the frame for any open screen). The
+        // editor edits the lit scene, so it must see it undimmed — same reason as
+        // applyBlur above. renderBackground reaches this via its else branch
+        // (deferSubtitles() is false), so no-op'ing it leaves a clean world view.
     }
 
     @Override
