@@ -70,6 +70,12 @@ dependencies {
 	// Iris runtime dependencies (not auto-pulled from the Modrinth artifact).
 	modRuntimeOnly "org.anarres:jcpp:1.4.14"
 	modRuntimeOnly "io.github.douira:glsl-transformer:2.0.0-pre13"
+
+	// --- TEST HARNESS ONLY (runClient) ---
+	// NOT a dependency of the mod itself — the Replay Mod integration is gated by
+	// FabricLoader.isModLoaded("replaymod") + reflection. This only puts Replay Mod
+	// on the dev classpath so the editor can be tested inside a replay.
+	modRuntimeOnly "maven.modrinth:replaymod:1.20.4-2.6.23"
 }
 
 processResources {

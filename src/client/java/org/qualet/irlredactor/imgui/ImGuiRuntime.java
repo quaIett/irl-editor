@@ -4,7 +4,6 @@ import imgui.ImFontAtlas;
 import imgui.ImFontConfig;
 import imgui.ImGui;
 import imgui.ImGuiIO;
-import imgui.flag.ImGuiConfigFlags;
 import imgui.gl3.ImGuiImplGl3;
 import imgui.glfw.ImGuiImplGlfw;
 import net.minecraft.client.MinecraftClient;
@@ -54,7 +53,6 @@ public final class ImGuiRuntime
 
         ImGuiIO io = ImGui.getIO();
         io.setIniFilename(null); // don't litter the run dir with imgui.ini
-        io.addConfigFlags(ImGuiConfigFlags.NavEnableKeyboard);
 
         EditorStyle.apply(ImGui.getStyle());
         loadFonts(io);
@@ -146,5 +144,11 @@ public final class ImGuiRuntime
         implGlfw.shutdown();
         ImGui.destroyContext();
         initialized = false;
+    }
+
+    /** Whether the ImGui context + backends have been created (first frame ran). */
+    public boolean isInitialized()
+    {
+        return initialized;
     }
 }
