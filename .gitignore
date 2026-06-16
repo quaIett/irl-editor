@@ -25,3 +25,6 @@ bin/
 
 # fabric
 run/
+
+# build/run logs (transient)
+*.log
