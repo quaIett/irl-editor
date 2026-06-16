@@ -2,8 +2,6 @@ package org.qualet.irlredactor.light.shadow;
 
 import net.minecraft.block.BlockRenderType;
 import net.minecraft.block.BlockState;
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.RenderLayers;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.shape.VoxelShape;
@@ -86,31 +84,20 @@ public final class BlockShadowCollector
                     // inside its own shadow map.
                     if (state.getRenderType() == BlockRenderType.INVISIBLE) continue;
 
-                    // Cutout blocks (doors with glass, iron bars, trapdoors,
-                    // ladders, leaves) are baked from their textured BakedModel
-                    // via vanilla's alpha-test cutout shader so transparent
-                    // texture pixels let light through. Shape is unused for
-                    // these - geometry comes from the model, not the AABB.
-                    boolean cutout;
-                    try
-                    {
-                        RenderLayer layer = RenderLayers.getBlockLayer(state);
-                        cutout = layer == RenderLayer.getCutout() || layer == RenderLayer.getCutoutMipped();
-                    }
-                    catch (Throwable t)
-                    {
-                        cutout = false;
-                    }
-                    if (cutout)
-                    {
-                        out.add(new BlockShadowEntry(mut.toImmutable(), null, true));
-                        continue;
-                    }
+                    // TODO(1.21.11 port): cutout-textured occluders (leaves /
+                    // glass / iron bars baked from their alpha-tested BakedModel
+                    // so transparent texels let light through) are not yet
+                    // re-implemented. RenderLayers.getBlockLayer(BlockState) was
+                    // removed in the 1.21.9 render rewrite, and the textured bake
+                    // depends on the new deferred render path. For now every block
+                    // is treated as an opaque-shape occluder (its culling/collision
+                    // /outline shape is baked by ShadowRenderer's raw-GL depth
+                    // pass). Restoring cutout transparency is a Stage-2/3 follow-up.
 
                     VoxelShape shape;
                     try
                     {
-                        shape = state.getCullingShape(world, mut);
+                        shape = state.getCullingShape();
                         if (shape == null || shape.isEmpty())
                         {
                             shape = state.getCollisionShape(world, mut);

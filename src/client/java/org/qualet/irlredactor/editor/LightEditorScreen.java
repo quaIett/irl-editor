@@ -29,8 +29,11 @@ public class LightEditorScreen extends Screen
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta)
     {
-        // Flush Minecraft's buffered draws first, then overlay ImGui via raw GL.
-        context.draw();
+        // 1.21.11 GUI rendering is deferred (DrawContext records draw commands
+        // that the engine flushes later), so the old context.draw() flush is
+        // gone. ImGui still overlays the frame via raw GL here. NOTE: verify the
+        // draw ordering at runtime — if ImGui ends up under MC's GUI, this may
+        // need a later hook (e.g. a HUD/after-frame event) instead of Screen#render.
         ImGuiRuntime.get().frame(panel::draw);
     }
 

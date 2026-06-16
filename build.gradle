@@ -1,5 +1,5 @@
 plugins {
-	id 'fabric-loom' version '1.9-SNAPSHOT'
+	id 'fabric-loom' version '1.14-SNAPSHOT'
 	id 'maven-publish'
 }
 
@@ -63,13 +63,17 @@ dependencies {
 
 	// --- IRLite lighting base (BBS-free port) ---
 	// Iris is referenced at compile time by the shadow-sampler mixins; Sodium is
-	// runtime-only. 1.20.4 ships LWJGL 3.3.3, so no LWJGL pin is needed.
-	modImplementation "maven.modrinth:iris:1.7.2+1.20.4"
-	modRuntimeOnly "maven.modrinth:sodium:mc1.20.4-0.5.8"
+	// runtime-only. 1.21.11 ships LWJGL 3.3.6; the imgui `exclude group: 'org.lwjgl'`
+	// above keeps the editor on MC's LWJGL, so no LWJGL pin is needed.
+	// Sodium mc1.21.11-0.8.7 is the exact build Iris 1.10.7 pins as its dependency.
+	modImplementation "maven.modrinth:iris:1.10.7+1.21.11-fabric"
+	modRuntimeOnly "maven.modrinth:sodium:mc1.21.11-0.8.7-fabric"
 
 	// Iris runtime dependencies (not auto-pulled from the Modrinth artifact).
+	// glsl-transformer 3.x additionally pulls antlr4-runtime at runtime.
 	modRuntimeOnly "org.anarres:jcpp:1.4.14"
-	modRuntimeOnly "io.github.douira:glsl-transformer:2.0.0-pre13"
+	modRuntimeOnly "io.github.douira:glsl-transformer:3.0.0-pre3"
+	modRuntimeOnly "org.antlr:antlr4-runtime:4.13.1"
 }
 
 processResources {
@@ -80,8 +84,8 @@ processResources {
 }
 
 java {
-	sourceCompatibility = JavaVersion.VERSION_17
-	targetCompatibility = JavaVersion.VERSION_17
+	sourceCompatibility = JavaVersion.VERSION_21
+	targetCompatibility = JavaVersion.VERSION_21
 	withSourcesJar()
 }
 

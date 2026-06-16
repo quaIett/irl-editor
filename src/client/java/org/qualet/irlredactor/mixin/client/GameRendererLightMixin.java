@@ -3,7 +3,7 @@ package org.qualet.irlredactor.mixin.client;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.GameRenderer;
-import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.client.render.RenderTickCounter;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.util.math.Vec3d;
 import org.spongepowered.asm.mixin.Mixin;
@@ -27,8 +27,13 @@ public class GameRendererLightMixin
     private static boolean irlite$dormant;
 
     @Inject(method = "renderWorld", at = @At("HEAD"))
-    private void irlite$collectLights(float tickDelta, long limitTime, MatrixStack matrices, CallbackInfo ci)
+    private void irlite$collectLights(RenderTickCounter tickCounter, CallbackInfo ci)
     {
+        // 1.21.11: renderWorld(RenderTickCounter) — the old (tickDelta, limitTime,
+        // MatrixStack) parameters are gone, so derive the partial tick here
+        // (ignoreFreeze=true matches the previous always-advancing behaviour).
+        float tickDelta = tickCounter.getTickProgress(true);
+
         // Shaders off -> nothing consumes the SSBO or the shadow maps, so the
         // whole collect/bake/upload pipeline would be wasted work (the shadow
         // bake being the expensive part). Drop the render-path registrations
@@ -53,7 +58,7 @@ public class GameRendererLightMixin
         MinecraftClient mc = MinecraftClient.getInstance();
         ClientWorld world = mc.world;
         Camera camera = mc.gameRenderer.getCamera();
-        Vec3d cameraPos = camera != null ? camera.getPos() : Vec3d.ZERO;
+        Vec3d cameraPos = camera != null ? camera.getCameraPos() : Vec3d.ZERO;
         // Forward look vector for the shadow baker's behind-camera light cull.
         Vec3d cameraForward = camera != null ? Vec3d.fromPolar(camera.getPitch(), camera.getYaw()) : null;
 
@@ -67,7 +72,8 @@ public class GameRendererLightMixin
         // rendering writes into our depth FBO).
         if (world != null && camera != null)
         {
-            mc.getEntityRenderDispatcher().configure(world, camera, mc.getCameraEntity());
+            // 1.21.11: EntityRenderManager.configure(Camera, Entity) — world arg dropped.
+            mc.getEntityRenderDispatcher().configure(camera, mc.getCameraEntity());
         }
         ShadowBaker.bake(world, cameraPos, cameraForward, tickDelta);
 

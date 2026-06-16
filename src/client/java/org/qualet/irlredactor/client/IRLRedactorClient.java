@@ -9,6 +9,7 @@ import net.minecraft.client.network.ServerInfo;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.WorldSavePath;
 import org.lwjgl.glfw.GLFW;
 import org.qualet.irlredactor.editor.LightEditorScreen;
@@ -28,6 +29,11 @@ public class IRLRedactorClient implements ClientModInitializer
 {
     private static KeyBinding openEditor;
 
+    /** Keybind category. 1.21.11 replaced the plain String category with a
+     *  registered {@link KeyBinding.Category} keyed by an Identifier. */
+    private static final KeyBinding.Category CATEGORY =
+        KeyBinding.Category.create(Identifier.of("irl-redactor", "main"));
+
     /** Key of the world currently joined (folder name SP / address MP), or null. */
     private static String currentWorldKey;
 
@@ -38,7 +44,7 @@ public class IRLRedactorClient implements ClientModInitializer
             "key.irl-redactor.open_editor",
             InputUtil.Type.KEYSYM,
             GLFW.GLFW_KEY_L,
-            "category.irl-redactor"
+            CATEGORY
         ));
 
         // In-world light guides (gated by LightConfig.showGuides).

@@ -1,6 +1,7 @@
 package org.qualet.irlredactor.mixin.client.iris;
 
 import net.irisshaders.iris.gl.program.ProgramSamplers;
+import net.irisshaders.iris.gl.texture.TextureType;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -22,7 +23,11 @@ public class ProgramSamplersBuilderMixin
     private void irlite$bindShadowSamplers(CallbackInfoReturnable<ProgramSamplers> cir)
     {
         ProgramSamplers.Builder self = (ProgramSamplers.Builder) (Object) this;
-        self.addDynamicSampler(SpotlightDepthAtlas::getGlTextureId, "irl_spotShadowAtlas");
-        self.addDynamicSampler(PointShadowArray::getGlTextureId, "irl_pointShadowArray");
+        // 1.21.11 / Iris 1.10.7: the old 2-arg addDynamicSampler(IntSupplier, String)
+        // is gone. Register with an explicit TextureType (2D — Iris has no
+        // CUBE_MAP_ARRAY type, so the point cube-array is rebound to its real GL
+        // target by SamplerBindingCubeArrayMixin) and a null GlSampler supplier.
+        self.addDynamicSampler(TextureType.TEXTURE_2D, SpotlightDepthAtlas::getGlTextureId, () -> null, "irl_spotShadowAtlas");
+        self.addDynamicSampler(TextureType.TEXTURE_2D, PointShadowArray::getGlTextureId, () -> null, "irl_pointShadowArray");
     }
 }

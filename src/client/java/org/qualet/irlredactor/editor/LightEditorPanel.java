@@ -472,7 +472,7 @@ public class LightEditorPanel
         }
 
         boolean spot = state.type == LightState.Type.SPOT;
-        Vec3d cp = cam.getPos();
+        Vec3d cp = cam.getCameraPos();
         float aspect = (float) mc.getWindow().getFramebufferWidth() / (float) mc.getWindow().getFramebufferHeight();
         double fovDeg = mc.options.getFov().getValue();
 
