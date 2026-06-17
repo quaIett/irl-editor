@@ -46,6 +46,11 @@ public final class ShadowRenderer
     private static final float NEAR = 0.05f;
     private static final int FULL_LIGHT = LightmapTextureManager.pack(15, 15);
 
+    // Constant "up" axes for the spot lookAt — lookAt only reads them, so a
+    // shared instance replaces the per-call allocation (T1.3).
+    private static final Vector3f UP_Y = new Vector3f(0f, 1f, 0f);
+    private static final Vector3f UP_Z = new Vector3f(0f, 0f, 1f);
+
     private static boolean inPass = false;
     /** True once {@link #savePassState} has snapshotted the original GL state
      *  this bake. {@link #beginBake} clears it so the next bake re-grabs the
@@ -66,6 +71,24 @@ public final class ShadowRenderer
      *  RenderSystem. The block batch draws with this + currentView directly,
      *  NOT RenderSystem's live matrices, which a caster can leave corrupted. */
     private static final Matrix4f currentProj = new Matrix4f();
+
+    // --- Reused matrix scratch (T1.3) ----------------------------------------
+    // RenderSystem.setProjectionMatrix copies its argument, and the block batch
+    // draws with currentProj (a copy made in applyMatrices), so reusing these
+    // projection objects across passes is safe — endPass restores the saved one.
+    /** Spot projection; rebuilt only when its fov/far change (all of a light's
+     *  passes, and consecutive equal lights, reuse it). */
+    private static final Matrix4f spotProj = new Matrix4f();
+    private static float spotProjFov = Float.NaN;
+    private static float spotProjFar = Float.NaN;
+    /** Point projection — identical for all 6 cube faces; rebuilt only when far
+     *  (= radius) changes. */
+    private static final Matrix4f pointProj = new Matrix4f();
+    private static float pointProjFar = Float.NaN;
+    /** Shared per-caster / per-cutout-block MatrixStack (the render thread is
+     *  single-threaded). {@link #resetScratch} drains + identity-resets it
+     *  before each use, so a caster that throws mid-build can't leave it dirty. */
+    private static final MatrixStack scratch = new MatrixStack();
 
     private ShadowRenderer()
     {}
@@ -108,7 +131,12 @@ public final class ShadowRenderer
 
         float fovDeg = Math.max(outerDeg, 1.0f);
         float far = Math.max(range, NEAR + 0.1f);
-        Matrix4f proj = new Matrix4f().perspective((float) Math.toRadians(fovDeg), 1.0f, NEAR, far);
+        if (fovDeg != spotProjFov || far != spotProjFar)
+        {
+            spotProj.identity().perspective((float) Math.toRadians(fovDeg), 1.0f, NEAR, far);
+            spotProjFov = fovDeg;
+            spotProjFar = far;
+        }
 
         Vector3f up = pickStableUp(ldy);
         currentView.identity().lookAt(
@@ -117,7 +145,7 @@ public final class ShadowRenderer
             up.x, up.y, up.z
         );
 
-        applyMatrices(proj);
+        applyMatrices(spotProj);
     }
 
     /**
@@ -145,7 +173,11 @@ public final class ShadowRenderer
         }
 
         float far = Math.max(radius, NEAR + 0.1f);
-        Matrix4f proj = new Matrix4f().perspective((float) Math.toRadians(90.0), 1.0f, NEAR, far);
+        if (far != pointProjFar)
+        {
+            pointProj.identity().perspective((float) Math.toRadians(90.0), 1.0f, NEAR, far);
+            pointProjFar = far;
+        }
 
         float dx, dy, dz, ux, uy, uz;
         switch (face)
@@ -164,7 +196,7 @@ public final class ShadowRenderer
             ux, uy, uz
         );
 
-        applyMatrices(proj);
+        applyMatrices(pointProj);
     }
 
     public static final int CASTER_ENTITY = 0;
@@ -180,7 +212,7 @@ public final class ShadowRenderer
 
         MinecraftClient mc = MinecraftClient.getInstance();
         VertexConsumerProvider.Immediate immediate = mc.getBufferBuilders().getEntityVertexConsumers();
-        MatrixStack matrices = new MatrixStack();
+        resetScratch();
 
         // Form-renderer paths inherit GL state, so pin what we need per caster.
         RenderSystem.depthMask(true);
@@ -192,7 +224,7 @@ public final class ShadowRenderer
         {
             // BBS-free engine: only vanilla world entities cast shadows. Model-block
             // and film-replay casters were a BBS-form feature and are gone.
-            drawEntity((Entity) caster, matrices, immediate, tickDelta);
+            drawEntity((Entity) caster, scratch, immediate, tickDelta);
             immediate.draw();
         }
         catch (Throwable t)
@@ -461,7 +493,8 @@ public final class ShadowRenderer
             RenderSystem.applyModelViewMatrix();
             RenderSystem.setProjectionMatrix(currentProj, VertexSorter.BY_DISTANCE);
 
-            MatrixStack stack = new MatrixStack();
+            resetScratch();
+            MatrixStack stack = scratch;
             for (int i = 0, n = blocks.size(); i < n; i++)
             {
                 BlockShadowEntry entry = blocks.get(i);
@@ -670,6 +703,18 @@ public final class ShadowRenderer
 
     private static Vector3f pickStableUp(float dy)
     {
-        return Math.abs(dy) > 0.99f ? new Vector3f(0f, 0f, 1f) : new Vector3f(0f, 1f, 0f);
+        return Math.abs(dy) > 0.99f ? UP_Z : UP_Y;
+    }
+
+    /** Drain the shared {@link #scratch} back to its single root entry (popping
+     *  anything a thrown caster left pushed — {@code isEmpty()} is true at size
+     *  1) and reset that entry to identity, so each use starts clean. */
+    private static void resetScratch()
+    {
+        while (!scratch.isEmpty())
+        {
+            scratch.pop();
+        }
+        scratch.loadIdentity();
     }
 }

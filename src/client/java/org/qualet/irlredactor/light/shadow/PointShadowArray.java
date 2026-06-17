@@ -103,6 +103,28 @@ public final class PointShadowArray
         );
     }
 
+    /** GPU-copy ONE face of a slot's cube (array layer slot*6 + face) from the
+     *  static array into the live array. The overlay path copies only the faces
+     *  a dynamic caster touches this frame or touched last frame, instead of all
+     *  6, when the static base itself is unchanged (see ShadowBaker T1.2). */
+    public static void copyStaticFaceToLive(int slot, int face)
+    {
+        if (!initialized)
+        {
+            init();
+        }
+        if (!staticInitialized)
+        {
+            initStatic();
+        }
+        int layer = slot * 6 + face;
+        GL43.glCopyImageSubData(
+            staticTextureId, GL40.GL_TEXTURE_CUBE_MAP_ARRAY, 0, 0, 0, layer,
+            glTextureId, GL40.GL_TEXTURE_CUBE_MAP_ARRAY, 0, 0, 0, layer,
+            FACE_SIZE, FACE_SIZE, 1
+        );
+    }
+
     private static void init()
     {
         int[] ids = createArray();

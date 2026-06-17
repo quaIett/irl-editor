@@ -94,6 +94,14 @@ public final class ShadowBaker
     private static final Long2LongOpenHashMap lastStaticSig = new Long2LongOpenHashMap();
     private static final Long2IntOpenHashMap lastStaticTile = new Long2IntOpenHashMap();
     private static final Long2ObjectOpenHashMap<List<BlockShadowEntry>> lastStaticBlocks = new Long2ObjectOpenHashMap<>();
+    /** Per-light 6-bit mask of cube faces a dynamic caster was drawn into on the
+     *  LAST point overlay frame (T1.2). When the static base is unchanged, the
+     *  per-frame restore copies only the faces that need it — the ones a dynamic
+     *  caster touches now (dynFaceMaskScratch) OR touched last frame (this mask,
+     *  so a vacated face restores instead of keeping a stale silhouette) —
+     *  rather than blitting all 6. Absent key reads 0 (FastUtil default). Same
+     *  lifecycle as lastSig (purge / retain / reset). */
+    private static final Long2IntOpenHashMap lastFaceDynamic = new Long2IntOpenHashMap();
 
     /** Set true by {@link #scanInRange} when any in-range occluder is an entity
      *  or film replay (a dynamic subject) -> the light re-bakes every frame. */
@@ -104,6 +112,26 @@ public final class ShadowBaker
     /** Set by {@link #scanInRange} to the number of in-range model-block
      *  (static) occluders. */
     private static int staticInRangeScratch;
+
+    // --- Shortlist of in-range occluders (T1.1) ------------------------------
+    // scanInRange records the occluders that passed its range (+ cone for spots)
+    // test into shortIdx[0..shortCount), so the render passes that follow iterate
+    // only those — without re-running the range/cone/face tests a second (and
+    // third) time. shortFaceMask[s] is, for POINT scans (cone == false), the
+    // 6-bit cube-face mask of occluder shortIdx[s] (which face frustums its
+    // sphere touches), and dynFaceMaskScratch is the OR of that mask over the
+    // DYNAMIC (entity/replay) occluders — replacing the per-face faceHasDynamic
+    // walk in the point overlay. Spot scans leave shortFaceMask unused.
+    //
+    // Filled per-light right before that light's render passes; never reused
+    // across two scanInRange calls (the spot loop fully precedes the point loop,
+    // collect() fills occ[] once before both, so occ[] and these indices are
+    // stable across a light's whole bake). One source of truth for the
+    // scan == render invariant: the set rendered is exactly the set scanned.
+    private static final int[] shortIdx = new int[MAX_OCCLUDERS];
+    private static final int[] shortFaceMask = new int[MAX_OCCLUDERS];
+    private static int shortCount;
+    private static int dynFaceMaskScratch;
 
     // --- Sticky tile / cube-slot ownership ------------------------------------
     // A light KEEPS its atlas tile / cube slot across frames — including frames
@@ -311,7 +339,7 @@ public final class ShadowBaker
                 ShadowRenderer.beginSpot(myTile, lx, ly, lz, dx, dy, dz, range, outerDeg, false, true);
                 if (entInRange > 0)
                 {
-                    renderInRangeCone(lx, ly, lz, range, ndx, ndy, ndz, coneTheta, CASTERS_ALL, tickDelta);
+                    renderInRangeCone(CASTERS_ALL, tickDelta);
                 }
                 if (!blocks.isEmpty())
                 {
@@ -339,7 +367,7 @@ public final class ShadowBaker
                     ShadowRenderer.beginSpot(myTile, lx, ly, lz, dx, dy, dz, range, outerDeg, false, true);
                     if (staticInRangeScratch > 0)
                     {
-                        renderInRangeCone(lx, ly, lz, range, ndx, ndy, ndz, coneTheta, CASTERS_STATIC, tickDelta);
+                        renderInRangeCone(CASTERS_STATIC, tickDelta);
                     }
                     if (!blocks.isEmpty())
                     {
@@ -371,7 +399,7 @@ public final class ShadowBaker
                     ShadowRenderer.beginSpot(myTile, lx, ly, lz, dx, dy, dz, range, outerDeg, true, true);
                     if (staticInRangeScratch > 0)
                     {
-                        renderInRangeCone(lx, ly, lz, range, ndx, ndy, ndz, coneTheta, CASTERS_STATIC, tickDelta);
+                        renderInRangeCone(CASTERS_STATIC, tickDelta);
                     }
                     if (!blocks.isEmpty())
                     {
@@ -390,7 +418,7 @@ public final class ShadowBaker
                         profSpotOverlays++;
                     }
                     ShadowRenderer.beginSpot(myTile, lx, ly, lz, dx, dy, dz, range, outerDeg, false, false);
-                    renderInRangeCone(lx, ly, lz, range, ndx, ndy, ndz, coneTheta, CASTERS_DYNAMIC, tickDelta);
+                    renderInRangeCone(CASTERS_DYNAMIC, tickDelta);
                     ShadowRenderer.endPass();
                 }
             }
@@ -404,7 +432,7 @@ public final class ShadowBaker
                 ShadowRenderer.beginSpot(myTile, lx, ly, lz, dx, dy, dz, range, outerDeg, false, true);
                 if (dyn)
                 {
-                    renderInRangeCone(lx, ly, lz, range, ndx, ndy, ndz, coneTheta, CASTERS_DYNAMIC, tickDelta);
+                    renderInRangeCone(CASTERS_DYNAMIC, tickDelta);
                 }
                 ShadowRenderer.endPass();
             }
@@ -477,7 +505,7 @@ public final class ShadowBaker
                     ShadowRenderer.beginPointFace(myLayer, face, lx, ly, lz, radius, false, true);
                     if (entInRange > 0)
                     {
-                        renderInRangeFace(lx, ly, lz, radius, face, CASTERS_ALL, tickDelta);
+                        renderInRangeFace(face, CASTERS_ALL, tickDelta);
                     }
                     if (!blocks.isEmpty())
                     {
@@ -507,7 +535,7 @@ public final class ShadowBaker
                         ShadowRenderer.beginPointFace(myLayer, face, lx, ly, lz, radius, false, true);
                         if (staticInRangeScratch > 0)
                         {
-                            renderInRangeFace(lx, ly, lz, radius, face, CASTERS_STATIC, tickDelta);
+                            renderInRangeFace(face, CASTERS_STATIC, tickDelta);
                         }
                         if (!blocks.isEmpty())
                         {
@@ -520,9 +548,10 @@ public final class ShadowBaker
                 continue;
             }
 
-            // Overlay mode (see the spot loop). The whole static cube is
-            // restored with ONE 6-face GPU copy; dynamic casters then redraw
-            // only into the faces their spheres actually touch.
+            // Overlay mode (see the spot loop). The static base lives in the
+            // STATIC cube, re-baked only when it changes; each frame it is
+            // GPU-copied into the live cube and only the dynamic casters redraw,
+            // into the faces their spheres actually touch.
             if (hasStatic)
             {
                 boolean staticStale = !lastStaticTile.containsKey(id)
@@ -540,7 +569,7 @@ public final class ShadowBaker
                         ShadowRenderer.beginPointFace(myLayer, face, lx, ly, lz, radius, true, true);
                         if (staticInRangeScratch > 0)
                         {
-                            renderInRangeFace(lx, ly, lz, radius, face, CASTERS_STATIC, tickDelta);
+                            renderInRangeFace(face, CASTERS_STATIC, tickDelta);
                         }
                         if (!blocks.isEmpty())
                         {
@@ -552,7 +581,33 @@ public final class ShadowBaker
                     lastStaticTile.put(id, myLayer);
                     lastStaticBlocks.put(id, blocks);
                 }
-                PointShadowArray.copyStaticToLive(myLayer);
+
+                // Restore the static base into the live cube (T1.2). When the
+                // static layer was just re-baked (staticStale) every live face
+                // needs the new base, so blit all 6 in one call — this also
+                // covers first-overlay and post-tile-steal (both force
+                // staticStale via an absent / purged lastStaticTile). Otherwise
+                // copy only the faces that need it: the ones a dynamic caster
+                // touches now (dynNow) OR touched last frame (lastFaceDynamic, so
+                // a vacated face restores to static instead of keeping its stale
+                // silhouette). Untouched faces already hold the static base.
+                int dynNow = dynFaceMaskScratch;
+                if (staticStale)
+                {
+                    PointShadowArray.copyStaticToLive(myLayer);
+                }
+                else
+                {
+                    int copyMask = dynNow | lastFaceDynamic.get(id);
+                    for (int face = 0; face < 6; face++)
+                    {
+                        if ((copyMask & (1 << face)) != 0)
+                        {
+                            PointShadowArray.copyStaticFaceToLive(myLayer, face);
+                        }
+                    }
+                }
+
                 if (dyn)
                 {
                     if (PROFILE)
@@ -561,15 +616,16 @@ public final class ShadowBaker
                     }
                     for (int face = 0; face < 6; face++)
                     {
-                        if (!faceHasDynamic(lx, ly, lz, radius, face))
+                        if ((dynNow & (1 << face)) == 0)
                         {
-                            continue; // the copy already refreshed this face
+                            continue; // no dynamic caster reaches this face; the copy refreshed it
                         }
                         ShadowRenderer.beginPointFace(myLayer, face, lx, ly, lz, radius, false, false);
-                        renderInRangeFace(lx, ly, lz, radius, face, CASTERS_DYNAMIC, tickDelta);
+                        renderInRangeFace(face, CASTERS_DYNAMIC, tickDelta);
                         ShadowRenderer.endPass();
                     }
                 }
+                lastFaceDynamic.put(id, dynNow);
             }
             else
             {
@@ -584,7 +640,7 @@ public final class ShadowBaker
                     ShadowRenderer.beginPointFace(myLayer, face, lx, ly, lz, radius, false, true);
                     if (dyn)
                     {
-                        renderInRangeFace(lx, ly, lz, radius, face, CASTERS_DYNAMIC, tickDelta);
+                        renderInRangeFace(face, CASTERS_DYNAMIC, tickDelta);
                     }
                     ShadowRenderer.endPass();
                 }
@@ -695,6 +751,7 @@ public final class ShadowBaker
         lastStaticSig.remove(id);
         lastStaticTile.remove(id);
         lastStaticBlocks.remove(id);
+        lastFaceDynamic.remove(id);
         wasDynamic.remove(id);
     }
 
@@ -711,6 +768,7 @@ public final class ShadowBaker
         lastStaticSig.clear();
         lastStaticTile.clear();
         lastStaticBlocks.clear();
+        lastFaceDynamic.clear();
         wasDynamic.clear();
     }
 
@@ -812,6 +870,10 @@ public final class ShadowBaker
         {
             lastStaticBlocks.keySet().retainAll(keep);
         }
+        if (!lastFaceDynamic.isEmpty())
+        {
+            lastFaceDynamic.keySet().retainAll(keep);
+        }
         if (!wasDynamic.isEmpty())
         {
             wasDynamic.retainAll(keep);
@@ -862,10 +924,11 @@ public final class ShadowBaker
     private static int scanInRange(float lx, float ly, float lz, float reachBase,
                                    float dirX, float dirY, float dirZ, float coneTheta, boolean cone)
     {
-        int c = 0;
+        int sc = 0;
         int statics = 0;
         boolean dyn = false;
         long sig = 0L;
+        int dynFaces = 0;
         for (int k = 0; k < occCount; k++)
         {
             float ddx = ox[k] - lx, ddy = oy[k] - ly, ddz = oz[k] - lz;
@@ -878,7 +941,26 @@ public final class ShadowBaker
             {
                 continue;
             }
-            c++;
+            // Passed range (+ cone for spots): shortlist it so the render passes
+            // re-use this verdict instead of re-testing. For POINT scans
+            // (cone == false) also record which cube faces this occluder's sphere
+            // touches (k = radius·√2, exactly as in renderInRangeFace), so the
+            // face render + overlay loop read the bit instead of recomputing it.
+            int faceMask = 0;
+            if (!cone)
+            {
+                float kr = orad[k] * SQRT2;
+                for (int face = 0; face < 6; face++)
+                {
+                    if (sphereTouchesFace(face, ddx, ddy, ddz, kr))
+                    {
+                        faceMask |= 1 << face;
+                    }
+                }
+            }
+            shortIdx[sc] = k;
+            shortFaceMask[sc] = faceMask;
+            sc++;
             if (occType[k] == ShadowRenderer.CASTER_MODEL_BLOCK)
             {
                 sig += ostatichash[k];
@@ -887,12 +969,15 @@ public final class ShadowBaker
             else
             {
                 dyn = true; // entity or film replay -> dynamic subject
+                dynFaces |= faceMask; // per-face: which faces a dynamic caster reaches
             }
         }
+        shortCount = sc;
+        dynFaceMaskScratch = dynFaces;
         dynamicInRangeScratch = dyn;
         staticOccSigScratch = sig;
         staticInRangeScratch = statics;
-        return c;
+        return sc;
     }
 
     /** Caster-type filters for the renderInRange* helpers: everything (legacy
@@ -915,52 +1000,16 @@ public final class ShadowBaker
         return true;
     }
 
-    /** True when any in-range DYNAMIC occluder's sphere touches this cube
-     *  face's frustum — lets the overlay pass skip faces that the static
-     *  copy already refreshed. */
-    private static boolean faceHasDynamic(float lx, float ly, float lz, float reachBase, int face)
+    /** Render shortlisted occluders of the filtered type inside a spot's lit
+     *  cone. The range + cone test already ran in {@link #scanInRange}, whose
+     *  shortlist this walks, so the rendered set equals the counted set that
+     *  gated this bake (the scan == render invariant). */
+    private static void renderInRangeCone(int filter, float tickDelta)
     {
-        for (int k = 0; k < occCount; k++)
+        for (int s = 0; s < shortCount; s++)
         {
-            if (occType[k] == ShadowRenderer.CASTER_MODEL_BLOCK)
-            {
-                continue;
-            }
-            float vx = ox[k] - lx, vy = oy[k] - ly, vz = oz[k] - lz;
-            float reach = reachBase + orad[k];
-            if (vx * vx + vy * vy + vz * vz > reach * reach)
-            {
-                continue;
-            }
-            if (sphereTouchesFace(face, vx, vy, vz, orad[k] * SQRT2))
-            {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /** Render in-range occluders of the filtered type inside a spot's lit cone
-     *  (see {@link #insideCone}). The range + cone tests must match
-     *  {@link #scanInRange} exactly, so the rendered set equals the counted set
-     *  that gated this bake. */
-    private static void renderInRangeCone(float lx, float ly, float lz, float reachBase,
-                                          float dirX, float dirY, float dirZ, float coneTheta,
-                                          int filter, float tickDelta)
-    {
-        for (int k = 0; k < occCount; k++)
-        {
+            int k = shortIdx[s];
             if (!casterMatches(filter, occType[k]))
-            {
-                continue;
-            }
-            float ddx = ox[k] - lx, ddy = oy[k] - ly, ddz = oz[k] - lz;
-            float reach = reachBase + orad[k];
-            if (ddx * ddx + ddy * ddy + ddz * ddz > reach * reach)
-            {
-                continue;
-            }
-            if (!insideCone(dirX, dirY, dirZ, coneTheta, ddx, ddy, ddz, orad[k]))
             {
                 continue;
             }
@@ -968,26 +1017,22 @@ public final class ShadowBaker
         }
     }
 
-    /** Render in-range occluders of the filtered type that could intersect ONE
-     *  point-cube face's 90° frustum (face index per
+    /** Render shortlisted occluders of the filtered type whose sphere touches
+     *  ONE point-cube face's 90° frustum (face index per
      *  {@link ShadowRenderer#beginPointFace}); the other five faces never see
-     *  them, removing ~5/6 of the caster draws per point. */
-    private static void renderInRangeFace(float lx, float ly, float lz, float reachBase, int face,
-                                          int filter, float tickDelta)
+     *  them, removing ~5/6 of the caster draws per point. The face membership
+     *  is the {@code shortFaceMask} bit computed once in {@link #scanInRange}. */
+    private static void renderInRangeFace(int face, int filter, float tickDelta)
     {
-        for (int k = 0; k < occCount; k++)
+        int bit = 1 << face;
+        for (int s = 0; s < shortCount; s++)
         {
+            if ((shortFaceMask[s] & bit) == 0)
+            {
+                continue;
+            }
+            int k = shortIdx[s];
             if (!casterMatches(filter, occType[k]))
-            {
-                continue;
-            }
-            float vx = ox[k] - lx, vy = oy[k] - ly, vz = oz[k] - lz;
-            float reach = reachBase + orad[k];
-            if (vx * vx + vy * vy + vz * vz > reach * reach)
-            {
-                continue;
-            }
-            if (!sphereTouchesFace(face, vx, vy, vz, orad[k] * SQRT2))
             {
                 continue;
             }
