@@ -13,7 +13,9 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.WorldSavePath;
 import org.lwjgl.glfw.GLFW;
+import org.qualet.irl.patcher.Patcher;
 import org.qualet.irlredactor.editor.LightEditorScreen;
+import org.qualet.irlredactor.patcher.RedactorPatcherHost;
 import org.qualet.irlredactor.imgui.ImGuiRuntime;
 import org.qualet.irlredactor.light.LightGuideRenderer;
 import org.qualet.irlredactor.light.LightScene;
@@ -49,6 +51,9 @@ public class IRLRedactorClient implements ClientModInitializer
     @Override
     public void onInitializeClient()
     {
+        // Wire the shared patcher core to this mod's platform (Iris + MC dirs + bundled assets).
+        Patcher.install(new RedactorPatcherHost());
+
         openEditor = KeyBindingHelper.registerKeyBinding(new KeyBinding(
             "key.irl-redactor.open_editor",
             InputUtil.Type.KEYSYM,

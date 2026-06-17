@@ -61,6 +61,12 @@ dependencies {
 	// JNI natives are runtime-only. Windows for dev; add -linux / -macos for release.
 	clientRuntimeOnly "io.github.spair:imgui-java-natives-windows:${imguiVersion}"
 
+	// --- Shared BBS-free engine: light SSBO + .irlights patcher (irl-core) ---
+	// Plain Java lib via Gradle composite build (settings.gradle includeBuild),
+	// bundled into the mod jar with Loom's `include` (synthesizes a stub fabric.mod.json).
+	clientImplementation "org.qualet:irl-core:1.0.0"
+	include "org.qualet:irl-core:1.0.0"
+
 	// --- IRLite lighting base (BBS-free port) ---
 	// Iris is referenced at compile time by the shadow-sampler mixins; Sodium is
 	// runtime-only. 1.21.11 ships LWJGL 3.3.6; the imgui `exclude group: 'org.lwjgl'`

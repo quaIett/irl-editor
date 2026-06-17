@@ -12,9 +12,9 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.qualet.irlredactor.light.IrisShadersState;
-import org.qualet.irlredactor.light.LightBuffer;
+import org.qualet.irl.light.LightBuffer;
 import org.qualet.irlredactor.light.LightDriver;
-import org.qualet.irlredactor.light.LightRegistry;
+import org.qualet.irl.light.LightRegistry;
 import org.qualet.irlredactor.light.shadow.ShadowBaker;
 
 @Mixin(GameRenderer.class)

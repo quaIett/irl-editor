@@ -4,3 +4,7 @@ pluginManagement {
         gradlePluginPortal()
     }
 }
+
+// Shared BBS-free engine (light SSBO + .irlights patcher), pulled in as a Gradle
+// composite build and consumed by the coordinate org.qualet:irl-core (see build.gradle).
+includeBuild("../irl-core")

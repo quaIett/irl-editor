@@ -3,6 +3,8 @@ package org.qualet.irlredactor.light;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.util.math.Vec3d;
 
+import org.qualet.irl.light.LightRegistry;
+
 /**
  * Feeds the {@link LightScene} into the {@link LightRegistry} each frame — the
  * BBS-free replacement for IRLite's {@code LightCollector} (which walked BBS
