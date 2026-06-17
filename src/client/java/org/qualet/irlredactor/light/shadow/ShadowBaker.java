@@ -1077,9 +1077,12 @@ public final class ShadowBaker
     /** Render shortlisted occluders of the filtered type inside a spot's lit
      *  cone. The range + cone test already ran in {@link #scanInRange}, whose
      *  shortlist this walks, so the rendered set equals the counted set that
-     *  gated this bake (the scan == render invariant). */
+     *  gated this bake (the scan == render invariant). Casters are batched into a
+     *  single GPU flush per pass (T2.2): the begin/buffer/end bracket wraps the
+     *  loop so one immediate.draw submits them all. */
     private static void renderInRangeCone(int filter, float tickDelta)
     {
+        ShadowRenderer.beginCasterBatch();
         for (int s = 0; s < shortCount; s++)
         {
             int k = shortIdx[s];
@@ -1087,8 +1090,9 @@ public final class ShadowBaker
             {
                 continue;
             }
-            ShadowRenderer.renderCaster(occ[k], occType[k], tickDelta);
+            ShadowRenderer.bufferCaster(occ[k], occType[k], tickDelta);
         }
+        ShadowRenderer.endCasterBatch();
     }
 
     /** Render shortlisted occluders of the filtered type whose sphere touches
@@ -1099,6 +1103,7 @@ public final class ShadowBaker
     private static void renderInRangeFace(int face, int filter, float tickDelta)
     {
         int bit = 1 << face;
+        ShadowRenderer.beginCasterBatch();
         for (int s = 0; s < shortCount; s++)
         {
             if ((shortFaceMask[s] & bit) == 0)
@@ -1110,8 +1115,9 @@ public final class ShadowBaker
             {
                 continue;
             }
-            ShadowRenderer.renderCaster(occ[k], occType[k], tickDelta);
+            ShadowRenderer.bufferCaster(occ[k], occType[k], tickDelta);
         }
+        ShadowRenderer.endCasterBatch();
     }
 
     /** Small angular slack (radians) added to the spot cone test so a subject

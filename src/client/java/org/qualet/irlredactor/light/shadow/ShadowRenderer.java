@@ -202,37 +202,104 @@ public final class ShadowRenderer
     public static final int CASTER_MODEL_BLOCK = 1;
     public static final int CASTER_REPLAY = 2;
 
-    public static void renderCaster(Object caster, int casterType, float tickDelta)
+    // --- Batched caster pass (T2.2) ------------------------------------------
+    // Casters used to flush one immediate.draw() EACH (the old renderCaster), so a
+    // point light with N subjects paid up to 6N GPU flushes — once per caster per
+    // cube face. Now a pass brackets its casters with
+    //   beginCasterBatch() -> bufferCaster()* -> endCasterBatch()
+    // and flushes ONCE: the casters accumulate in the shared entity Immediate and
+    // a single draw at the end submits them all, so a pass costs at most one flush
+    // (one per face / per atlas tile) regardless of how many subjects it has.
+
+    /** Open a batched caster pass. Pins the depth GL state once for the whole
+     *  batch (each layer's RenderLayer.startDrawing sets the real state at flush
+     *  time, but pin defensively, as the old per-caster path did) and enters
+     *  baking mode so light-form renderers skip re-registration during the bake.
+     *  Casters are buffered with {@link #bufferCaster} and flushed by
+     *  {@link #endCasterBatch}. No-op outside a begin*()/endPass() bracket. */
+    public static void beginCasterBatch()
+    {
+        if (!inPass)
+        {
+            return;
+        }
+        RenderSystem.depthMask(true);
+        RenderSystem.enableDepthTest();
+        RenderSystem.disableBlend();
+        ShadowBakeState.setBaking(true);
+    }
+
+    /** Buffer one caster into the shared entity Immediate WITHOUT flushing. A
+     *  caster that throws mid-build is isolated: whatever is buffered so far is
+     *  flushed immediately, terminating the broken buffer so its partial vertices
+     *  can never fuse with the next caster's into a garbage quad — the per-caster
+     *  isolation the old one-draw-per-caster path had for free. */
+    public static void bufferCaster(Object caster, int casterType, float tickDelta)
     {
         if (caster == null || !inPass)
         {
             return;
         }
 
-        MinecraftClient mc = MinecraftClient.getInstance();
-        VertexConsumerProvider.Immediate immediate = mc.getBufferBuilders().getEntityVertexConsumers();
+        VertexConsumerProvider.Immediate immediate = MinecraftClient.getInstance().getBufferBuilders().getEntityVertexConsumers();
         resetScratch();
-
-        // Form-renderer paths inherit GL state, so pin what we need per caster.
-        RenderSystem.depthMask(true);
-        RenderSystem.enableDepthTest();
-        RenderSystem.disableBlend();
-
-        ShadowBakeState.setBaking(true);
         try
         {
             // BBS-free engine: only vanilla world entities cast shadows. Model-block
             // and film-replay casters were a BBS-form feature and are gone.
             drawEntity((Entity) caster, scratch, immediate, tickDelta);
-            immediate.draw();
         }
         catch (Throwable t)
         {
-            // swallow — a single bad caster must not abort the whole bake
+            // A caster threw mid-build: flush now so its partial geometry ends
+            // here instead of merging into the next caster's quads, then let the
+            // batch continue clean. flushCasterBatch re-asserts the matrices, so
+            // the good casters buffered before this one still draw correctly.
+            flushCasterBatch(immediate);
+        }
+    }
+
+    /** Close a batched caster pass: flush every buffered caster with one
+     *  immediate.draw() and leave baking mode. */
+    public static void endCasterBatch()
+    {
+        try
+        {
+            if (inPass)
+            {
+                flushCasterBatch(MinecraftClient.getInstance().getBufferBuilders().getEntityVertexConsumers());
+            }
         }
         finally
         {
             ShadowBakeState.setBaking(false);
+        }
+    }
+
+    /** Flush the shared entity Immediate with a single draw. The batched draw
+     *  transforms its buffered (world-space) caster geometry by RenderSystem's
+     *  LIVE modelview/projection — which a caster baked earlier in the batch can
+     *  leave corrupted (a vanilla mob drawn through the EntityRenderer; the same
+     *  corruption the block/cutout paths dodge by passing matrices explicitly to
+     *  VertexBuffer.draw). The per-caster path got away without this because each
+     *  caster flushed right after applyMatrices set the state; a single end-of-
+     *  batch flush does not. So re-assert the light's view/proj first: reload the
+     *  current modelview-stack top to currentView (NO extra push — applyMatrices /
+     *  endPass own the single push/pop) and restore the light projection. */
+    private static void flushCasterBatch(VertexConsumerProvider.Immediate immediate)
+    {
+        RenderSystem.setProjectionMatrix(currentProj, VertexSorter.BY_DISTANCE);
+        MatrixStack mv = RenderSystem.getModelViewStack();
+        mv.loadIdentity();
+        mv.multiplyPositionMatrix(currentView);
+        RenderSystem.applyModelViewMatrix();
+        try
+        {
+            immediate.draw();
+        }
+        catch (Throwable t)
+        {
+            // swallow — a broken buffer must not abort the whole bake
         }
     }
 
