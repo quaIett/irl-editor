@@ -1,0 +1,4 @@
+# Shader patch artifacts (.irlights) are pinned to LF so the IRLite and
+# IRL-redactor copies stay byte-identical regardless of platform/autocrlf.
+# This makes a raw `cmp` a valid cross-repo drift check.
+*.irlights text eol=lf
