@@ -94,6 +94,13 @@ public final class ShadowBaker
     private static final Long2LongOpenHashMap lastStaticSig = new Long2LongOpenHashMap();
     private static final Long2IntOpenHashMap lastStaticTile = new Long2IntOpenHashMap();
     private static final Long2ObjectOpenHashMap<List<BlockShadowEntry>> lastStaticBlocks = new Long2ObjectOpenHashMap<>();
+    /** Per point-light 6-bit mask of the cube faces the overlay drew dynamic
+     *  casters into LAST frame. The overlay restores from the static cube only
+     *  the faces that are dynamic now OR were dynamic last frame (the latter
+     *  must revert to static, else a vacated face keeps a stale shadow); faces
+     *  that were never dynamic still hold the static base from the last full
+     *  copy. Absent => no per-face history yet => force a full 6-face copy. */
+    private static final Long2IntOpenHashMap lastFaceDynamic = new Long2IntOpenHashMap();
 
     /** Set true by {@link #scanInRange} when any in-range occluder is an entity
      *  or film replay (a dynamic subject) -> the light re-bakes every frame. */
@@ -145,6 +152,10 @@ public final class ShadowBaker
     private static final int[] pointSlotActive = new int[PointShadowArray.MAX_SHADOWS];
     /** Monotonic bake counter driving the staleness test (not wall time). */
     private static int frameIndex;
+    /** Remaining full STATIC bakes allowed this frame (see
+     *  {@link LightConfig#shadowBakeBudget}); reset at the top of each bake and
+     *  spent by {@link #allowStaticBake}. */
+    private static int staticBakeBudget;
     /** Last seen shadow-quality setting; a change frees + re-allocates the
      *  depth textures, so every cached map must be forgotten with it. */
     private static int lastQuality = Integer.MIN_VALUE;
@@ -237,6 +248,8 @@ public final class ShadowBaker
         int n = LightRegistry.getCount();
         boolean cache = LightConfig.shadowCache();
         frameIndex++;
+        int budget = LightConfig.shadowBakeBudget();
+        staticBakeBudget = budget <= 0 ? Integer.MAX_VALUE : budget;
         ShadowRenderer.beginBake();
 
         // Behind-camera cull inputs: a light whose whole influence sphere is
@@ -350,7 +363,16 @@ public final class ShadowBaker
                     || lastSig.get(id) != sig               // geometry / static occluder moved
                     || lastBlocks.get(id) != blocks         // terrain in range changed
                     || lastTile.get(id) != myTile;          // assigned a different tile
-                if (dirty)
+                if (!dirty)
+                {
+                    rememberLive(id, sig, myTile, blocks, false);
+                    continue;
+                }
+                // A first bake / a new tile must never be deferred (the tile
+                // would be sampled unbaked or still hold another light's map);
+                // a plain content change can wait for budget next frame.
+                boolean mustBake = !lastTile.containsKey(id) || lastTile.get(id) != myTile;
+                if (allowStaticBake(mustBake))
                 {
                     if (PROFILE)
                     {
@@ -366,8 +388,10 @@ public final class ShadowBaker
                         ShadowRenderer.renderBlocksDepth(id, blocks);
                     }
                     ShadowRenderer.endPass();
+                    rememberLive(id, sig, myTile, blocks, false);
                 }
-                rememberLive(id, sig, myTile, blocks, false);
+                // Deferred: leave dirty state untouched so it retries next frame;
+                // the sticky tile keeps last frame's (still valid) map meanwhile.
                 continue;
             }
 
@@ -384,23 +408,34 @@ public final class ShadowBaker
                     || lastStaticTile.get(id) != myTile;
                 if (staticStale)
                 {
-                    if (PROFILE)
+                    // The leave frame (!dyn) records pure-static state below, so
+                    // the live tile must be correct now -> never defer it; nor a
+                    // first/relocated static tile (the copy would read garbage).
+                    boolean mustBake = !dyn
+                        || !lastStaticTile.containsKey(id)
+                        || lastStaticTile.get(id) != myTile;
+                    if (allowStaticBake(mustBake))
                     {
-                        profSpotBakes++;
+                        if (PROFILE)
+                        {
+                            profSpotBakes++;
+                        }
+                        ShadowRenderer.beginSpot(myTile, lx, ly, lz, dx, dy, dz, range, outerDeg, true, true);
+                        if (staticInRangeScratch > 0)
+                        {
+                            renderInRangeCone(CASTERS_STATIC, tickDelta);
+                        }
+                        if (!blocks.isEmpty())
+                        {
+                            ShadowRenderer.renderBlocksDepth(id, blocks);
+                        }
+                        ShadowRenderer.endPass();
+                        lastStaticSig.put(id, sig);
+                        lastStaticTile.put(id, myTile);
+                        lastStaticBlocks.put(id, blocks);
                     }
-                    ShadowRenderer.beginSpot(myTile, lx, ly, lz, dx, dy, dz, range, outerDeg, true, true);
-                    if (staticInRangeScratch > 0)
-                    {
-                        renderInRangeCone(CASTERS_STATIC, tickDelta);
-                    }
-                    if (!blocks.isEmpty())
-                    {
-                        ShadowRenderer.renderBlocksDepth(id, blocks);
-                    }
-                    ShadowRenderer.endPass();
-                    lastStaticSig.put(id, sig);
-                    lastStaticTile.put(id, myTile);
-                    lastStaticBlocks.put(id, blocks);
+                    // Deferred: the static tile keeps its previous content and
+                    // staticStale stays true -> retried on a later frame.
                 }
                 SpotlightDepthAtlas.copyStaticToLive(myTile);
                 if (dyn)
@@ -516,7 +551,13 @@ public final class ShadowBaker
                     || lastSig.get(id) != sig
                     || lastBlocks.get(id) != blocks
                     || lastTile.get(id) != myLayer;
-                if (dirty)
+                if (!dirty)
+                {
+                    rememberLive(id, sig, myLayer, blocks, false);
+                    continue;
+                }
+                boolean mustBake = !lastTile.containsKey(id) || lastTile.get(id) != myLayer;
+                if (allowStaticBake(mustBake))
                 {
                     if (PROFILE)
                     {
@@ -535,44 +576,81 @@ public final class ShadowBaker
                         }
                         ShadowRenderer.endPass();
                     }
+                    rememberLive(id, sig, myLayer, blocks, false);
                 }
-                rememberLive(id, sig, myLayer, blocks, false);
+                // Deferred: dirty state untouched -> retried next frame; the
+                // sticky slot keeps last frame's (still valid) cube meanwhile.
                 continue;
             }
 
-            // Overlay mode (see the spot loop). The whole static cube is
-            // restored with ONE 6-face GPU copy; dynamic casters then redraw
-            // only into the faces their spheres actually touch.
+            // Overlay mode (see the spot loop). The static cube is restored into
+            // the live cube; dynamic casters then redraw only into the faces
+            // their spheres actually touch.
             if (hasStatic)
             {
                 boolean staticStale = !lastStaticTile.containsKey(id)
                     || lastStaticSig.get(id) != sig
                     || lastStaticBlocks.get(id) != blocks
                     || lastStaticTile.get(id) != myLayer;
+                boolean bakedStatic = false;
                 if (staticStale)
                 {
-                    if (PROFILE)
+                    // Leave frame / first / relocated static cube must bake (see
+                    // the spot overlay note); a plain change can wait for budget.
+                    boolean mustBake = !dyn
+                        || !lastStaticTile.containsKey(id)
+                        || lastStaticTile.get(id) != myLayer;
+                    if (allowStaticBake(mustBake))
                     {
-                        profPointBakes++;
+                        if (PROFILE)
+                        {
+                            profPointBakes++;
+                        }
+                        for (int face = 0; face < 6; face++)
+                        {
+                            ShadowRenderer.beginPointFace(myLayer, face, lx, ly, lz, radius, true, true);
+                            if (staticInRangeScratch > 0)
+                            {
+                                renderInRangeFace(face, CASTERS_STATIC, tickDelta);
+                            }
+                            if (!blocks.isEmpty())
+                            {
+                                ShadowRenderer.renderBlocksDepth(id, blocks);
+                            }
+                            ShadowRenderer.endPass();
+                        }
+                        lastStaticSig.put(id, sig);
+                        lastStaticTile.put(id, myLayer);
+                        lastStaticBlocks.put(id, blocks);
+                        bakedStatic = true;
                     }
+                    // Deferred: the static cube is unchanged, so the per-face copy
+                    // below is still correct; staticStale retries next frame.
+                }
+
+                // Restore the live cube from the static base. Full 6-face copy
+                // only when the static cube was just (re)baked, or there is no
+                // per-face history yet; otherwise copy just the faces dynamic NOW
+                // or dynamic LAST frame (the latter must revert to static, else a
+                // vacated face keeps a stale shadow). Faces untouched since the
+                // last full copy already hold the current static base.
+                int dynNow = dynFaceMaskScratch;
+                if (bakedStatic || !lastFaceDynamic.containsKey(id))
+                {
+                    PointShadowArray.copyStaticToLive(myLayer);
+                }
+                else
+                {
+                    int copyMask = dynNow | lastFaceDynamic.get(id);
                     for (int face = 0; face < 6; face++)
                     {
-                        ShadowRenderer.beginPointFace(myLayer, face, lx, ly, lz, radius, true, true);
-                        if (staticInRangeScratch > 0)
+                        if ((copyMask & (1 << face)) != 0)
                         {
-                            renderInRangeFace(face, CASTERS_STATIC, tickDelta);
+                            PointShadowArray.copyStaticFaceToLive(myLayer, face);
                         }
-                        if (!blocks.isEmpty())
-                        {
-                            ShadowRenderer.renderBlocksDepth(id, blocks);
-                        }
-                        ShadowRenderer.endPass();
                     }
-                    lastStaticSig.put(id, sig);
-                    lastStaticTile.put(id, myLayer);
-                    lastStaticBlocks.put(id, blocks);
                 }
-                PointShadowArray.copyStaticToLive(myLayer);
+
                 if (dyn)
                 {
                     if (PROFILE)
@@ -581,7 +659,7 @@ public final class ShadowBaker
                     }
                     for (int face = 0; face < 6; face++)
                     {
-                        if ((dynFaceMaskScratch & (1 << face)) == 0)
+                        if ((dynNow & (1 << face)) == 0)
                         {
                             continue; // the copy already refreshed this face
                         }
@@ -590,6 +668,7 @@ public final class ShadowBaker
                         ShadowRenderer.endPass();
                     }
                 }
+                lastFaceDynamic.put(id, dynNow);
             }
             else
             {
@@ -608,6 +687,10 @@ public final class ShadowBaker
                     }
                     ShadowRenderer.endPass();
                 }
+                // This cleared every live face, so the per-face copy's invariant
+                // (untouched faces still hold the static base) no longer holds —
+                // drop the history so a return to static content full-copies.
+                lastFaceDynamic.remove(id);
             }
 
             if (dyn)
@@ -655,6 +738,27 @@ public final class ShadowBaker
         }
         BlockShadowCache.retainOnly(liveIds);
         ShadowRenderer.retainBlockVbos(liveIds);
+    }
+
+    /** Claim one full STATIC bake against this frame's budget. A {@code mustBake}
+     *  (a light that has never baked, or just changed tiles — deferring it would
+     *  sample an unbaked/foreign tile) ALWAYS proceeds and still decrements, so
+     *  the budget can go negative and throttle the rest of the frame. A
+     *  deferrable bake proceeds only while budget remains. Returns false to defer
+     *  (the caller leaves its dirty state untouched so it retries next frame). */
+    private static boolean allowStaticBake(boolean mustBake)
+    {
+        if (mustBake)
+        {
+            staticBakeBudget--;
+            return true;
+        }
+        if (staticBakeBudget > 0)
+        {
+            staticBakeBudget--;
+            return true;
+        }
+        return false;
     }
 
     /** Sticky allocation: the owner keeps its tile (and is marked active);
@@ -715,6 +819,7 @@ public final class ShadowBaker
         lastStaticSig.remove(id);
         lastStaticTile.remove(id);
         lastStaticBlocks.remove(id);
+        lastFaceDynamic.remove(id);
         wasDynamic.remove(id);
     }
 
@@ -731,6 +836,7 @@ public final class ShadowBaker
         lastStaticSig.clear();
         lastStaticTile.clear();
         lastStaticBlocks.clear();
+        lastFaceDynamic.clear();
         wasDynamic.clear();
     }
 
@@ -831,6 +937,10 @@ public final class ShadowBaker
         if (!lastStaticBlocks.isEmpty())
         {
             lastStaticBlocks.keySet().retainAll(keep);
+        }
+        if (!lastFaceDynamic.isEmpty())
+        {
+            lastFaceDynamic.keySet().retainAll(keep);
         }
         if (!wasDynamic.isEmpty())
         {

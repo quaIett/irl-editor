@@ -18,6 +18,13 @@ public final class LightConfig
     public static boolean shadowBlocks = true;
     /** Block-shadow collection radius in blocks (default 24). */
     public static int shadowBlockRadius = 24;
+    /** Max full STATIC shadow re-bakes allowed per frame; deferred lamps keep
+     *  their sticky tile's previous (valid) map and retry on a later frame, so
+     *  a mass invalidation (block edit in a shared section, quality change, a
+     *  camera pan across a row of lamps) is spread out instead of spiking. A
+     *  light that has never baked, or just moved tiles, is never deferred.
+     *  {@code <= 0} means unlimited. Default 4. */
+    public static int shadowBakeBudget = 4;
 
     private LightConfig()
     {}
@@ -45,5 +52,10 @@ public final class LightConfig
     public static int shadowBlockRadius()
     {
         return shadowBlockRadius;
+    }
+
+    public static int shadowBakeBudget()
+    {
+        return shadowBakeBudget;
     }
 }

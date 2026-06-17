@@ -103,6 +103,29 @@ public final class PointShadowArray
         );
     }
 
+    /** GPU-copy a SINGLE cube face (array layer {@code slot*6 + face}) from the
+     *  static array into the live array. The overlay path uses this to restore
+     *  only the faces a dynamic caster touched (or vacated) instead of blitting
+     *  all 6 every frame, since dynamic shadows usually fall on one or two
+     *  faces. */
+    public static void copyStaticFaceToLive(int slot, int face)
+    {
+        if (!initialized)
+        {
+            init();
+        }
+        if (!staticInitialized)
+        {
+            initStatic();
+        }
+        int layer = slot * 6 + face;
+        GL43.glCopyImageSubData(
+            staticTextureId, GL40.GL_TEXTURE_CUBE_MAP_ARRAY, 0, 0, 0, layer,
+            glTextureId, GL40.GL_TEXTURE_CUBE_MAP_ARRAY, 0, 0, 0, layer,
+            FACE_SIZE, FACE_SIZE, 1
+        );
+    }
+
     private static void init()
     {
         int[] ids = createArray();
