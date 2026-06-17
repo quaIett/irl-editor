@@ -68,6 +68,20 @@ public final class ShadowRenderer
     private static final Matrix4f currentProj = new Matrix4f();
     private static final Matrix4f viewProj = new Matrix4f();
 
+    /** Cached perspective projections. The spot projection depends only on
+     *  (fov, far) and the point projection only on far, but a bake runs many
+     *  passes (every spot tile, every point face) — recomputing perspective()'s
+     *  trig per pass is wasted work when consecutive lamps share parameters.
+     *  These hold the last-built matrix and the params it was built for; each
+     *  begin*() copies the cached matrix into {@link #currentProj} (cheap; the
+     *  shared currentProj is also written by the other light kind, so the cache
+     *  cannot live in currentProj itself), rebuilding only when params change. */
+    private static final Matrix4f spotProjCache = new Matrix4f();
+    private static float lastSpotFov = Float.NaN;
+    private static float lastSpotFar = Float.NaN;
+    private static final Matrix4f pointProjCache = new Matrix4f();
+    private static float lastPointFar = Float.NaN;
+
     public static final int CASTER_ENTITY = 0;
     public static final int CASTER_MODEL_BLOCK = 1;
     public static final int CASTER_REPLAY = 2;
@@ -112,7 +126,13 @@ public final class ShadowRenderer
 
         float fovDeg = Math.max(outerDeg, 1.0f);
         float far = Math.max(range, NEAR + 0.1f);
-        currentProj.identity().perspective((float) Math.toRadians(fovDeg), 1.0f, NEAR, far);
+        if (fovDeg != lastSpotFov || far != lastSpotFar)
+        {
+            spotProjCache.identity().perspective((float) Math.toRadians(fovDeg), 1.0f, NEAR, far);
+            lastSpotFov = fovDeg;
+            lastSpotFar = far;
+        }
+        currentProj.set(spotProjCache);
 
         Vector3f up = pickStableUp(ldy);
         currentView.identity().lookAt(
@@ -146,7 +166,12 @@ public final class ShadowRenderer
         }
 
         float far = Math.max(radius, NEAR + 0.1f);
-        currentProj.identity().perspective((float) Math.toRadians(90.0), 1.0f, NEAR, far);
+        if (far != lastPointFar)
+        {
+            pointProjCache.identity().perspective((float) Math.toRadians(90.0), 1.0f, NEAR, far);
+            lastPointFar = far;
+        }
+        currentProj.set(pointProjCache);
 
         float dx, dy, dz, ux, uy, uz;
         switch (face)
@@ -531,8 +556,13 @@ public final class ShadowRenderer
         passStateSaved = true;
     }
 
+    /** Shared up-vectors for the spot lookAt. lookAt only reads the components,
+     *  so a single instance of each is safe (and avoids a per-pass allocation). */
+    private static final Vector3f UP_Y = new Vector3f(0f, 1f, 0f);
+    private static final Vector3f UP_Z = new Vector3f(0f, 0f, 1f);
+
     private static Vector3f pickStableUp(float dy)
     {
-        return Math.abs(dy) > 0.99f ? new Vector3f(0f, 0f, 1f) : new Vector3f(0f, 1f, 0f);
+        return Math.abs(dy) > 0.99f ? UP_Z : UP_Y;
     }
 }
