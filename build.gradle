@@ -1,5 +1,5 @@
 plugins {
-	id 'fabric-loom' version '1.9-SNAPSHOT'
+	id 'fabric-loom' version '1.15-SNAPSHOT'
 	id 'maven-publish'
 }
 
@@ -74,9 +74,11 @@ dependencies {
 
 	// --- IRLite lighting base (BBS-free port) ---
 	// Iris is referenced at compile time by the shadow-sampler mixins; Sodium is
-	// runtime-only. 1.20.4 ships LWJGL 3.3.3, so no LWJGL pin is needed.
-	modImplementation "maven.modrinth:iris:1.7.2+1.20.4"
-	modRuntimeOnly "maven.modrinth:sodium:mc1.20.4-0.5.8"
+	// runtime-only. 1.21.1 ships LWJGL 3.3.3, so no LWJGL pin is needed.
+	// Iris 1.8.8 keeps the 2-arg ProgramSamplers.Builder.addDynamicSampler form
+	// (the 4-arg TextureType overload only arrives in Iris 1.9+/1.10.7 for 1.21.11).
+	modImplementation "maven.modrinth:iris:1.8.8+1.21.1-fabric"
+	modRuntimeOnly "maven.modrinth:sodium:mc1.21.1-0.6.13-fabric"
 
 	// Iris runtime dependencies (not auto-pulled from the Modrinth artifact).
 	modRuntimeOnly "org.anarres:jcpp:1.4.14"
@@ -86,7 +88,7 @@ dependencies {
 	// NOT a dependency of the mod itself — the Replay Mod integration is gated by
 	// FabricLoader.isModLoaded("replaymod") + reflection. This only puts Replay Mod
 	// on the dev classpath so the editor can be tested inside a replay.
-	modRuntimeOnly "maven.modrinth:replaymod:1.20.4-2.6.23"
+	modRuntimeOnly "maven.modrinth:replaymod:1.21-2.6.19"
 }
 
 processResources {
@@ -97,8 +99,8 @@ processResources {
 }
 
 java {
-	sourceCompatibility = JavaVersion.VERSION_17
-	targetCompatibility = JavaVersion.VERSION_17
+	sourceCompatibility = JavaVersion.VERSION_21
+	targetCompatibility = JavaVersion.VERSION_21
 	withSourcesJar()
 }
 

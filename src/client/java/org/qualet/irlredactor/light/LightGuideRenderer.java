@@ -4,6 +4,8 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.minecraft.client.render.BufferBuilder;
+import net.minecraft.client.render.BufferRenderer;
+import net.minecraft.client.render.BuiltBuffer;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.GameRenderer;
 import net.minecraft.client.render.Tessellator;
@@ -73,9 +75,10 @@ public final class LightGuideRenderer
         RenderSystem.disableCull();
         RenderSystem.lineWidth(2.0f);
 
-        Tessellator tess = Tessellator.getInstance();
-        BufferBuilder buf = tess.getBuffer();
-        buf.begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
+        // 1.21: Tessellator.getBuffer()/BufferBuilder.begin() are gone — begin()
+        // moved to Tessellator and returns the builder directly.
+        BufferBuilder buf = Tessellator.getInstance()
+            .begin(VertexFormat.DrawMode.DEBUG_LINES, VertexFormats.POSITION_COLOR);
 
         for (PlacedLight l : LightScene.all())
         {
@@ -99,7 +102,14 @@ public final class LightGuideRenderer
             }
         }
 
-        tess.draw();
+        // 1.21: Tessellator.draw() is gone — build the buffer and submit it through
+        // BufferRenderer with the bound global program. endNullable() yields null
+        // when no light produced vertices, so guard the draw.
+        BuiltBuffer built = buf.endNullable();
+        if (built != null)
+        {
+            BufferRenderer.drawWithGlobalProgram(built);
+        }
 
         RenderSystem.lineWidth(1.0f);
         RenderSystem.enableCull();
@@ -166,8 +176,9 @@ public final class LightGuideRenderer
 
     private static void line(BufferBuilder buf, Matrix4f m, float x1, float y1, float z1, float x2, float y2, float z2, float r, float g, float b)
     {
-        buf.vertex(m, x1, y1, z1).color(r, g, b, 1f).next();
-        buf.vertex(m, x2, y2, z2).color(r, g, b, 1f).next();
+        // 1.21: VertexConsumer.next() is gone — each vertex(...) starts a new vertex.
+        buf.vertex(m, x1, y1, z1).color(r, g, b, 1f);
+        buf.vertex(m, x2, y2, z2).color(r, g, b, 1f);
     }
 
     /** Clamp to [0,1] with a floor so a very dark light still has a visible guide. */

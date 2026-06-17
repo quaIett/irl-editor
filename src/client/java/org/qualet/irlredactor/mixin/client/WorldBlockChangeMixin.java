@@ -41,7 +41,7 @@ public class WorldBlockChangeMixin
         CallbackInfoReturnable<Boolean> cir)
     {
         World self = (World) (Object) this;
-        if (self.isClient)
+        if (self.isClient())
         {
             // Marks the affected lamps' block lists stale; ShadowBaker picks up
             // the new list instance by reference next frame and re-bakes them.

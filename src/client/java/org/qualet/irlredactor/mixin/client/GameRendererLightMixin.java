@@ -3,7 +3,7 @@ package org.qualet.irlredactor.mixin.client;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.GameRenderer;
-import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.client.render.RenderTickCounter;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.util.math.Vec3d;
 import org.spongepowered.asm.mixin.Mixin;
@@ -27,8 +27,15 @@ public class GameRendererLightMixin
     private static boolean irlite$dormant;
 
     @Inject(method = "renderWorld", at = @At("HEAD"))
-    private void irlite$collectLights(float tickDelta, long limitTime, MatrixStack matrices, CallbackInfo ci)
+    private void irlite$collectLights(RenderTickCounter tickCounter, CallbackInfo ci)
     {
+        // 1.21.1: renderWorld(RenderTickCounter) — the old (tickDelta, limitTime,
+        // MatrixStack) parameters are gone, so derive the partial tick here
+        // (ignoreFreeze=true matches the previous always-advancing behaviour).
+        // NB: 1.21.1 still names this getTickDelta(boolean); the getTickProgress
+        // rename only lands later (and is what the 1.21.11 line uses).
+        float tickDelta = tickCounter.getTickDelta(true);
+
         // Shaders off -> nothing consumes the SSBO or the shadow maps, so the
         // whole collect/bake/upload pipeline would be wasted work (the shadow
         // bake being the expensive part). Drop the render-path registrations
