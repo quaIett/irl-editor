@@ -13,11 +13,10 @@ import net.minecraft.util.math.Vec3d;
  * lives in the SHARED orchestration ({@link ShadowBaker}) + GL layer
  * ({@link ShadowRenderer}).
  *
- * <p>See {@code irl-core/docs/shadow-caster-seam-spec.md} for the full contract
- * and the 5 load-bearing invariants. The known variants implement this as: real
- * vanilla {@code EntityRenderDispatcher} render (redactor-main, see
- * {@link RedactorEntityCasterSource}); an inflated box blob into a raw depth VBO
- * (redactor-port 1.21.11); BBS Form/Film/Morph silhouettes (IRLite).
+ * <p>See {@code irl-core/docs/shadow-caster-seam-spec.md} for the full contract,
+ * the 5 load-bearing invariants, and the per-variant implementation sketches
+ * (redactor-main entity dispatcher, redactor-port raw-VBO box blob, IRLite BBS
+ * Form/Film/Morph). Each mod's source-impl class lives in this same package.
  */
 public interface ShadowCasterSource
 {
