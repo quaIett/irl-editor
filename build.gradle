@@ -51,6 +51,12 @@ dependencies {
 	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
+	// --- Shared BBS-free engine: light SSBO + .irlights patcher (irl-core) ---
+	// Plain Java lib via Gradle composite build (settings.gradle includeBuild),
+	// bundled into the mod jar with Loom's `include` (synthesizes a stub fabric.mod.json).
+	clientImplementation "org.qualet:irl-core:1.0.0"
+	include "org.qualet:irl-core:1.0.0"
+
 	// imgui-java: binding + LWJGL3 backend (client only). LWJGL itself is provided
 	// by Minecraft, so the backend's transitive LWJGL is excluded to avoid a second
 	// (conflicting) copy on the classpath. The same coords are also `include`d so

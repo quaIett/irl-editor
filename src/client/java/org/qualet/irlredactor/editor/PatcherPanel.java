@@ -8,12 +8,12 @@ import imgui.flag.ImGuiCol;
 import imgui.flag.ImGuiCond;
 import imgui.flag.ImGuiWindowFlags;
 import imgui.type.ImBoolean;
-import org.qualet.irlredactor.patcher.IrlPatch;
-import org.qualet.irlredactor.patcher.IrlPatchApplier;
-import org.qualet.irlredactor.patcher.IrlPatchParser;
-import org.qualet.irlredactor.patcher.PatchLibrary;
-import org.qualet.irlredactor.patcher.PatchResult;
-import org.qualet.irlredactor.patcher.Shaderpacks;
+import org.qualet.irl.patcher.IrlPatch;
+import org.qualet.irl.patcher.IrlPatchApplier;
+import org.qualet.irl.patcher.IrlPatchParser;
+import org.qualet.irl.patcher.PatchLibrary;
+import org.qualet.irl.patcher.PatchResult;
+import org.qualet.irl.patcher.Shaderpacks;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

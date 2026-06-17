@@ -10,7 +10,7 @@ import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import org.qualet.irlredactor.light.LightConfig;
-import org.qualet.irlredactor.light.LightRegistry;
+import org.qualet.irl.light.LightRegistry;
 
 import java.util.Arrays;
 import java.util.Collections;

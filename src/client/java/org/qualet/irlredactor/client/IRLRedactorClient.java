@@ -12,8 +12,10 @@ import net.minecraft.client.util.InputUtil;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.WorldSavePath;
 import org.lwjgl.glfw.GLFW;
+import org.qualet.irl.patcher.Patcher;
 import org.qualet.irlredactor.editor.LightEditorScreen;
 import org.qualet.irlredactor.imgui.ImGuiRuntime;
+import org.qualet.irlredactor.patcher.RedactorPatcherHost;
 import org.qualet.irlredactor.light.LightGuideRenderer;
 import org.qualet.irlredactor.light.LightScene;
 import org.qualet.irlredactor.light.LightStore;
@@ -43,6 +45,10 @@ public class IRLRedactorClient implements ClientModInitializer
     @Override
     public void onInitializeClient()
     {
+        // Install the patcher host so the shared irl-core patcher can reach the game
+        // dir / Iris shaderpacks dir / bundled .irlights (matches the IRLite wiring).
+        Patcher.install(new RedactorPatcherHost());
+
         openEditor = KeyBindingHelper.registerKeyBinding(new KeyBinding(
             "key.irl-redactor.open_editor",
             InputUtil.Type.KEYSYM,
