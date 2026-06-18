@@ -72,12 +72,13 @@ public final class RedactorEntityCasterSource implements ShadowCasterSource
         double cx = MathHelper.lerp(tickDelta, entity.lastRenderX, entity.getX());
         double cy = MathHelper.lerp(tickDelta, entity.lastRenderY, entity.getY());
         double cz = MathHelper.lerp(tickDelta, entity.lastRenderZ, entity.getZ());
-        float yaw = entity.getYaw(tickDelta);
 
         EntityRenderDispatcher dispatcher = MinecraftClient.getInstance().getEntityRenderDispatcher();
         if (dispatcher != null)
         {
-            dispatcher.render(entity, cx, cy, cz, yaw, tickDelta, matrices, immediate, FULL_LIGHT);
+            // 1.21.2: render() no longer takes a yaw arg — the EntityRenderState
+            // built internally derives body/head yaw from the entity + tickDelta.
+            dispatcher.render(entity, cx, cy, cz, tickDelta, matrices, immediate, FULL_LIGHT);
         }
     }
 }
