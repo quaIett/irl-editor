@@ -89,6 +89,12 @@ public final class BlockShadowCache
         float cy = Math.round(ly);
         float cz = Math.round(lz);
         float cr = (float) Math.ceil(radius) + SNAP_PAD;
+        // The cell the light is actually inside (true position, NOT the snapped
+        // collection center): the collector skips only this block when it emits,
+        // so a light placed on / inside an emitter isn't trapped in its own map.
+        int hostX = (int) Math.floor(lx);
+        int hostY = (int) Math.floor(ly);
+        int hostZ = (int) Math.floor(lz);
 
         long h = hash(cx, cy, cz, cr);
         CacheEntry e = byId.get(id);
@@ -97,7 +103,7 @@ public final class BlockShadowCache
             return e.list;
         }
 
-        List<BlockShadowEntry> fresh = BlockShadowCollector.collectForLight(world, cx, cy, cz, cr);
+        List<BlockShadowEntry> fresh = BlockShadowCollector.collectForLight(world, cx, cy, cz, cr, hostX, hostY, hostZ);
         if (e == null)
         {
             e = new CacheEntry();

@@ -46,6 +46,8 @@ public class WorldBlockChangeMixin
             // Marks the affected lamps' block lists stale; ShadowBaker picks up
             // the new list instance by reference next frame and re-bakes them.
             BlockShadowCache.invalidateAt(pos);
+            // (Auto block-lights need no signal here: their rolling scan picks up
+            //  emitter placement/removal within a cycle — see AutoLightManager.)
         }
     }
 }

@@ -5,6 +5,7 @@ import imgui.extension.imguizmo.ImGuizmo;
 import imgui.extension.imguizmo.flag.Mode;
 import imgui.extension.imguizmo.flag.Operation;
 import imgui.flag.ImGuiColorEditFlags;
+import imgui.flag.ImGuiCond;
 import imgui.flag.ImGuiWindowFlags;
 import imgui.type.ImBoolean;
 import net.minecraft.client.MinecraftClient;
@@ -15,6 +16,7 @@ import org.joml.Quaternionf;
 import org.qualet.irlredactor.light.LightConfig;
 import org.qualet.irlredactor.light.LightScene;
 import org.qualet.irlredactor.light.PlacedLight;
+import org.qualet.irlredactor.light.auto.AutoLightManager;
 
 import java.util.List;
 
@@ -58,6 +60,21 @@ public class LightEditorPanel
     private final ImBoolean cfgBlocks = new ImBoolean(LightConfig.shadowBlocks);
     private final ImBoolean cfgGuides = new ImBoolean(LightConfig.showGuides);
     private final float[]   cfgRadius = { LightConfig.shadowBlockRadius };
+    private final ImBoolean cfgAutoLights    = new ImBoolean(LightConfig.autoLights);
+    private final ImBoolean cfgAutoShadows   = new ImBoolean(LightConfig.autoLightShadows);
+    private final float[]   cfgAutoIntensity = { LightConfig.autoLightIntensity };
+    private final float[]   cfgAutoReach     = { LightConfig.autoLightReach };
+    private final float[]   cfgAutoRadius    = { LightConfig.autoLightRadius };
+    private final float[]   cfgAutoMax       = { LightConfig.autoLightMax };
+
+    /** Experimental-feature warning popup id. */
+    private static final String WARN_POPUP_ID = "##irl_auto_warn";
+    /** Shown once per game session (JVM): set when the warning is first displayed
+     *  after the user enables auto-lights; static so it survives the editor being
+     *  reopened, and resets on a game restart. */
+    private static boolean experimentalWarnShown;
+    /** Request to open the warning popup on the next root render. */
+    private boolean wantOpenWarn;
 
     // Reused per-frame matrix buffers for the move/rotate gizmo (column-major float[16]).
     private final float[] gizmoView  = new float[16];
@@ -131,6 +148,46 @@ public class LightEditorPanel
         // Rendered at the root (after the panel's end) so the modal sits on top
         // of the panel and dims the world behind it.
         patcher.draw();
+        drawExperimentalWarning();
+    }
+
+    /** One-shot-per-session experimental-feature warning, shown when auto-lights
+     *  are first enabled. Mirrors the patcher's deferred openPopup-at-root pattern
+     *  so the modal isn't nested inside the panel window. */
+    private void drawExperimentalWarning()
+    {
+        if (wantOpenWarn)
+        {
+            ImGui.openPopup(WARN_POPUP_ID);
+            wantOpenWarn = false;
+        }
+
+        float cx = ImGui.getIO().getDisplaySizeX() * 0.5f;
+        float cy = ImGui.getIO().getDisplaySizeY() * 0.5f;
+        ImGui.setNextWindowPos(cx, cy, ImGuiCond.Appearing, 0.5f, 0.5f);
+        // Fixed width, auto height (0). NOT AlwaysAutoResize — that would size to
+        // the unwrapped text and make the modal very wide; an explicit wrap pos
+        // below keeps the body wrapped at the fixed width.
+        ImGui.setNextWindowSize(360f, 0f, ImGuiCond.Appearing);
+
+        int flags = ImGuiWindowFlags.NoCollapse
+            | ImGuiWindowFlags.NoTitleBar
+            | ImGuiWindowFlags.NoResize;
+
+        if (ImGui.beginPopupModal(WARN_POPUP_ID, flags))
+        {
+            Widgets.text(Lang.t("irl-redactor.editor.autoLightWarnTitle"));
+            ImGui.dummy(0f, 4f);
+            ImGui.pushTextWrapPos(ImGui.getCursorPosX() + 336f);
+            ImGui.textWrapped(Lang.t("irl-redactor.editor.autoLightWarnBody"));
+            ImGui.popTextWrapPos();
+            ImGui.dummy(0f, 8f);
+            if (Widgets.primaryButton("warn_ok", Lang.t("irl-redactor.editor.autoLightWarnOk"), ImGui.getContentRegionAvail().x))
+            {
+                ImGui.closeCurrentPopup();
+            }
+            ImGui.endPopup();
+        }
     }
 
     // ---- source list (Phase B) --------------------------------------------
@@ -457,6 +514,41 @@ public class LightEditorPanel
 
         Widgets.toggleRow("cfg_guides", Lang.t("irl-redactor.editor.showGuides"), cfgGuides);
         LightConfig.showGuides = cfgGuides.get();
+
+        // --- auto block-lights ---
+        ImGui.dummy(0f, 4f);
+        boolean autoWas = LightConfig.autoLights;
+        Widgets.toggleRow("cfg_autolights", Lang.t("irl-redactor.editor.autoLights"), cfgAutoLights);
+        LightConfig.autoLights = cfgAutoLights.get();
+        // Just turned ON -> show the experimental-feature warning, once per session.
+        if (LightConfig.autoLights && !autoWas && !experimentalWarnShown)
+        {
+            experimentalWarnShown = true;
+            wantOpenWarn = true;
+        }
+
+        ImGui.beginDisabled(!LightConfig.autoLights);
+        Widgets.toggleRow("cfg_autoshadows", Lang.t("irl-redactor.editor.autoLightShadows"), cfgAutoShadows);
+        LightConfig.autoLightShadows = cfgAutoShadows.get();
+
+        // Brightness / reach scale the hardcoded per-block table; scan radius is
+        // how far emitters are searched for. Changes are picked up by the rolling
+        // scan within ~1s (no explicit signal needed).
+        Widgets.trackpad("cfg_autointensity", Lang.t("irl-redactor.editor.autoLightIntensity"), cfgAutoIntensity, 0f, 5f, "%.2f");
+        LightConfig.autoLightIntensity = cfgAutoIntensity[0];
+        Widgets.trackpad("cfg_autoreach", Lang.t("irl-redactor.editor.autoLightReach"), cfgAutoReach, 0.25f, 3f, "%.2f");
+        LightConfig.autoLightReach = cfgAutoReach[0];
+        Widgets.trackpad("cfg_autoradius", Lang.t("irl-redactor.editor.autoLightRadius"), cfgAutoRadius, 8f, 96f, "%.0f");
+        LightConfig.autoLightRadius = Math.round(cfgAutoRadius[0]);
+
+        // Source limit (nearest-first). Applied live in the feed — no rescan needed,
+        // so it's NOT in autoChanged. High values get expensive: the shaderpack
+        // loops over every light per pixel. 0 = no auto-lights.
+        Widgets.trackpad("cfg_automax", Lang.t("irl-redactor.editor.autoLightMax"), cfgAutoMax, 0f, 2000f, "%.0f");
+        LightConfig.autoLightMax = Math.round(cfgAutoMax[0]);
+
+        Widgets.textDisabled(Lang.t("irl-redactor.editor.autoLightActive", AutoLightManager.count()));
+        ImGui.endDisabled();
 
         ImGui.dummy(0f, 2f);
         if (Widgets.button("open_patcher", Lang.t("irl-redactor.patcher.title"), ImGui.getContentRegionAvail().x, false))
