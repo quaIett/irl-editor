@@ -50,6 +50,11 @@ public class PlacedLight
     public boolean entitiesOnly = false;
     public boolean blocksOnly = false;
     public boolean shadows = true;
+    /** Auto-light hint, only consulted by {@link LightDriver} on the auto-light
+     *  path (manual lights leave it true and ignore it): whether this auto block-
+     *  light may take one of the scarce shadow slots. Set false for ultra-weak
+     *  sources like redstone dust so they never waste a slot / cube bake. */
+    public boolean autoShadowEligible = true;
 
     public PlacedLight()
     {
