@@ -2,8 +2,10 @@ package org.qualet.irlredactor.light;
 
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.util.math.Vec3d;
-
+import org.qualet.irl.light.LightBuffer;
 import org.qualet.irl.light.LightRegistry;
+import org.qualet.irlredactor.light.auto.AutoLightManager;
+import org.qualet.irlredactor.light.shadow.PointShadowArray;
 
 /**
  * Feeds the {@link LightScene} into the {@link LightRegistry} each frame — the
@@ -18,8 +20,24 @@ import org.qualet.irl.light.LightRegistry;
  */
 public final class LightDriver
 {
+    /** Max NEW auto-light shadow first-bakes to introduce per active frame, so a
+     *  freshly-lit area ramps its cube bakes over several frames instead of one
+     *  spike (a per-light first bake bypasses the shadow bake budget by design —
+     *  it can't show a blank map). Reset to 0 whenever the pipeline goes dormant
+     *  (shaders off frees the depth textures), so each shaders-on re-ramps. */
+    private static final int AUTO_SHADOW_RAMP_STEP = 2;
+    private static int autoShadowRamp;
+
     private LightDriver()
     {}
+
+    /** Pipeline went dormant (shaders off): the depth textures were freed, so the
+     *  next shaders-on frame first-bakes from scratch — ramp the auto-shadows in
+     *  over several frames again instead of baking all of them at once. */
+    public static void resetAutoShadowRamp()
+    {
+        autoShadowRamp = 0;
+    }
 
     public static void collect(ClientWorld world, Vec3d cameraPos, float tickDelta)
     {
@@ -28,6 +46,10 @@ public final class LightDriver
             return;
         }
 
+        // Manual lights first, so they keep priority on the limited shadow slots.
+        // Count manual POINT lights that cast shadows: those compete for the same
+        // cube-shadow slots the auto-lights would use, so their share is reserved.
+        int manualShadowPoints = 0;
         java.util.List<PlacedLight> lights = LightScene.all();
         for (int i = 0, n = lights.size(); i < n; i++)
         {
@@ -42,6 +64,49 @@ public final class LightDriver
             }
             else
             {
+                emitPoint(l);
+                if (l.shadows)
+                {
+                    manualShadowPoints++;
+                }
+            }
+        }
+
+        // Auto block-lights (torch / glowstone / ...), all point lights. Fed AFTER
+        // the manual lights and capped to the SSBO headroom so a manual light is
+        // never dropped at the 256-light limit. Only the nearest few cast shadows:
+        //   - reserve the cube slots manual point lights need (PointShadowArray has
+        //     MAX_SHADOWS), so an auto-light never starves a manual one of a slot;
+        //   - ramp the count up over frames so a freshly-lit area doesn't first-bake
+        //     every cube in a single frame.
+        // Nearest-first feed means the closest emitters win the shadow grants.
+        if (LightConfig.autoLights())
+        {
+            int headroom = Math.max(0, LightBuffer.MAX_LIGHTS - LightRegistry.getCount());
+            int feedMax = Math.min(LightConfig.autoLightMax(), headroom);
+            java.util.List<PlacedLight> autos = AutoLightManager.nearest(cameraPos, feedMax);
+
+            autoShadowRamp = Math.min(PointShadowArray.MAX_SHADOWS, autoShadowRamp + AUTO_SHADOW_RAMP_STEP);
+            int shadowBudget = LightConfig.autoLightShadows()
+                ? Math.min(autoShadowRamp, Math.max(0, PointShadowArray.MAX_SHADOWS - manualShadowPoints))
+                : 0;
+
+            // Grant shadows to the nearest ELIGIBLE auto-lights up to the budget;
+            // ineligible ones (e.g. redstone dust) never consume a slot.
+            int granted = 0;
+            for (int i = 0, n = autos.size(); i < n; i++)
+            {
+                PlacedLight l = autos.get(i);
+                if (l == null)
+                {
+                    continue;
+                }
+                boolean wantShadow = l.autoShadowEligible && granted < shadowBudget;
+                l.shadows = wantShadow;
+                if (wantShadow)
+                {
+                    granted++;
+                }
                 emitPoint(l);
             }
         }

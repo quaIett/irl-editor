@@ -37,7 +37,8 @@ public final class BlockShadowCollector
 
     public static List<BlockShadowEntry> collectForLight(ClientWorld world,
                                                          float lx, float ly, float lz,
-                                                         float radius)
+                                                         float radius,
+                                                         int hostX, int hostY, int hostZ)
     {
         List<BlockShadowEntry> out = new ArrayList<>();
         if (world == null || radius < 1e-3f)
@@ -75,6 +76,15 @@ public final class BlockShadowCollector
                     mut.set(x, y, z);
                     BlockState state = world.getBlockState(mut);
                     if (state.isAir()) continue;
+
+                    // The block the light sits INSIDE (an emitting torch /
+                    // glowstone / lantern / lava / ...) must not cast a shadow:
+                    // the bulb is inside it, so its own silhouette would
+                    // otherwise trap the light in its own depth map. Scoped to
+                    // the host cell (floor of the light position) so emitters
+                    // ELSEWHERE in range still cast shadows normally. Same idea
+                    // as the INVISIBLE ModelBlock skip just below.
+                    if (x == hostX && y == hostY && z == hostZ && state.getLuminance() > 0) continue;
 
                     // BlockRenderType.INVISIBLE means the block draws nothing
                     // through the vanilla render path - ModelBlock, barrier,

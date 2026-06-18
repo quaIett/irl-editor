@@ -26,6 +26,36 @@ public final class LightConfig
      *  {@code <= 0} means unlimited. Default 4. */
     public static int shadowBakeBudget = 4;
 
+    // --- Auto block-lights ----------------------------------------------------
+    // Automatically place a point light on every light-emitting vanilla block
+    // (torch, glowstone, lantern, lava, ...) within range, with hardcoded
+    // colour/radius per block type. See AutoLightManager + BlockLightDefs.
+
+    /** Master toggle for auto block-lights. Default OFF — it's an experimental,
+     *  potentially heavy mode the user opts into. */
+    public static boolean autoLights = false;
+    /** Whether auto block-lights cast shadows. Default OFF: shadows are by far the
+     *  heaviest part — the shaderpack does ~28 PCSS texture taps PER shadowed light
+     *  PER lit pixel (capped at 16 lights), plus per-light cube bakes. Unshadowed
+     *  lights early-out in the shader (no taps) and skip the bake entirely, so the
+     *  default stays smooth even with a high source count. Turn on for shadows (the
+     *  nearest ones win the 16 cube slots) at a real FPS cost. */
+    public static boolean autoLightShadows = false;
+    /** Global brightness multiplier applied to every auto block-light's
+     *  hardcoded table intensity (default 1.0 = the table value as-is). */
+    public static float autoLightIntensity = 1.0f;
+    /** Global reach multiplier applied to every auto block-light's hardcoded
+     *  table radius — how far each source shines (default 1.0). Distinct from
+     *  {@link #autoLightRadius}, which is the scan radius. */
+    public static float autoLightReach = 1.0f;
+    /** Radius in blocks around the camera within which emissive blocks are
+     *  scanned for auto-lighting (default 48). Larger = more lights found. */
+    public static int autoLightRadius = 48;
+    /** Hard cap on how many auto block-lights are fed to the engine, nearest
+     *  first (default 200). Keeps the total light count under
+     *  {@code LightBuffer.MAX_LIGHTS} (256) with headroom for manual lights. */
+    public static int autoLightMax = 200;
+
     private LightConfig()
     {}
 
@@ -57,5 +87,35 @@ public final class LightConfig
     public static int shadowBakeBudget()
     {
         return shadowBakeBudget;
+    }
+
+    public static boolean autoLights()
+    {
+        return autoLights;
+    }
+
+    public static boolean autoLightShadows()
+    {
+        return autoLightShadows;
+    }
+
+    public static float autoLightIntensity()
+    {
+        return autoLightIntensity;
+    }
+
+    public static float autoLightReach()
+    {
+        return autoLightReach;
+    }
+
+    public static int autoLightRadius()
+    {
+        return autoLightRadius;
+    }
+
+    public static int autoLightMax()
+    {
+        return autoLightMax;
     }
 }

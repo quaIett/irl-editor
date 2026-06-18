@@ -20,6 +20,7 @@ import org.qualet.irlredactor.imgui.ImGuiRuntime;
 import org.qualet.irlredactor.light.LightGuideRenderer;
 import org.qualet.irlredactor.light.LightScene;
 import org.qualet.irlredactor.light.LightStore;
+import org.qualet.irlredactor.light.auto.AutoLightManager;
 import org.qualet.irlredactor.replay.ReplayCompat;
 
 import java.nio.file.Path;
@@ -76,6 +77,7 @@ public class IRLRedactorClient implements ClientModInitializer
         {
             saveCurrentWorld();
             LightScene.clear();
+            AutoLightManager.clear();
             currentWorldKey = null;
         });
     }
@@ -93,6 +95,14 @@ public class IRLRedactorClient implements ClientModInitializer
      */
     private static void onEndClientTick(MinecraftClient client)
     {
+        // Auto block-lights: rescan the emissive blocks around the player when due
+        // (throttled inside; no-op when the feature is off or there's no world).
+        if (client.world != null && client.player != null)
+        {
+            AutoLightManager.tick(client.world,
+                client.player.getX(), client.player.getEyeY(), client.player.getZ());
+        }
+
         // Drain the keybind queue every tick so a press made during a replay (fly-
         // camera mode, where the keybind does fire) can't leak out as a stale open.
         boolean keybindPressed = false;

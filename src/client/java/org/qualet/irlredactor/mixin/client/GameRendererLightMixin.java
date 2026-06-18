@@ -48,6 +48,9 @@ public class GameRendererLightMixin
                 irlite$dormant = true;
                 LightBuffer.uploadEmpty();
                 ShadowBaker.onShadersDisabled();
+                // Depth textures are freed here; re-ramp auto-shadow first-bakes
+                // when shaders return instead of baking every cube in one frame.
+                LightDriver.resetAutoShadowRamp();
             }
 
             return;
