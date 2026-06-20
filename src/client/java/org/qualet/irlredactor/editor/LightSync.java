@@ -58,6 +58,11 @@ public final class LightSync
         s.entitiesOnly.set(l.entitiesOnly);
         s.blocksOnly.set(l.blocksOnly);
 
+        s.cookie.set(l.cookie == null ? "" : l.cookie);
+        s.cookieRotation[0] = (float) Math.toDegrees(l.cookieRotation);
+        s.cookieScale[0] = l.cookieScale;
+        s.cookieInvert.set(l.cookieInvert);
+
         s.pos[0] = (float) l.x; s.pos[1] = (float) l.y; s.pos[2] = (float) l.z;
         s.dir[0] = l.dirX; s.dir[1] = l.dirY; s.dir[2] = l.dirZ;
     }
@@ -86,6 +91,11 @@ public final class LightSync
         l.shadows = s.shadows.get();
         l.entitiesOnly = s.entitiesOnly.get();
         l.blocksOnly = s.blocksOnly.get();
+
+        l.cookie = s.cookie.get();
+        l.cookieRotation = (float) Math.toRadians(s.cookieRotation[0]);
+        l.cookieScale = s.cookieScale[0];
+        l.cookieInvert = s.cookieInvert.get();
 
         l.x = s.pos[0]; l.y = s.pos[1]; l.z = s.pos[2];
         l.dirX = s.dir[0]; l.dirY = s.dir[1]; l.dirZ = s.dir[2];

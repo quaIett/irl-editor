@@ -17,6 +17,7 @@ import org.qualet.irlredactor.light.LightConfig;
 import org.qualet.irlredactor.light.LightScene;
 import org.qualet.irlredactor.light.PlacedLight;
 import org.qualet.irlredactor.light.auto.AutoLightManager;
+import org.qualet.irlredactor.light.cookie.CookieArray;
 
 import java.util.List;
 
@@ -54,6 +55,9 @@ public class LightEditorPanel
     private PlacedLight selected;
     /** id currently mirrored into {@link #state}; drives the pull-on-change. */
     private long syncedId = 0L;
+
+    /** Cached cookie file list for the gobo picker; null = needs a (re)scan. */
+    private String[] cookieFiles;
 
     // Engine-settings mirrors (LightConfig is plain static fields; toggles need ImBoolean).
     private final ImBoolean cfgCache  = new ImBoolean(LightConfig.shadowCache);
@@ -123,6 +127,7 @@ public class LightEditorPanel
                 ImGui.separator();
                 placementGroup();
                 basicGroup();
+                cookieGroup();
                 volumetricGroup();
                 shadowGroup();
             }
@@ -476,6 +481,87 @@ public class LightEditorPanel
         if (Widgets.toggleRow("blocks", Lang.t("irl-redactor.editor.blocksOnly"), state.blocksOnly) && state.blocksOnly.get())
         {
             state.entitiesOnly.set(false);
+        }
+    }
+
+    // ---- cookie / gobo (spot only) ----------------------------------------
+
+    /** Projected-mask picker, shown only for spotlights: pick an image from the
+     *  cookies folder + rotation / scale / invert. A point light has no projection
+     *  frustum, so the whole group is hidden for it. */
+    private void cookieGroup()
+    {
+        if (state.type != LightState.Type.SPOT)
+        {
+            return;
+        }
+        if (!Widgets.collapsingHeader("cookie", Lang.t("irl-redactor.editor.cookie"), false))
+        {
+            return;
+        }
+
+        if (cookieFiles == null)
+        {
+            refreshCookieFiles();
+        }
+
+        // file picker: a "(none)" row + every image in the cookies folder
+        float listH = 5f * 26f + 6f;
+        if (ImGui.beginChild("##cookie_list", 0f, listH, true))
+        {
+            String cur = state.cookie.get();
+            if (Widgets.listItem("ck_none", Lang.t("irl-redactor.editor.cookieNone"), cur.isEmpty()))
+            {
+                state.cookie.set("");
+            }
+            for (String f : cookieFiles)
+            {
+                if (Widgets.listItem("ck_" + f, f, f.equals(cur)))
+                {
+                    state.cookie.set(f);
+                }
+            }
+        }
+        ImGui.endChild();
+
+        float avail = ImGui.getContentRegionAvail().x;
+        float btnW = (avail - ITEM_SP_X) * 0.5f;
+        if (Widgets.button("ck_refresh", Lang.t("irl-redactor.editor.cookieRefresh"), btnW, false))
+        {
+            CookieArray.reload();
+            refreshCookieFiles();
+        }
+        ImGui.sameLine();
+        if (Widgets.button("ck_folder", Lang.t("irl-redactor.editor.cookieFolder"), btnW, false))
+        {
+            openCookieFolder();
+        }
+
+        ImGui.beginDisabled(state.cookie.get().isEmpty());
+        Widgets.trackpad("ck_rot", Lang.t("irl-redactor.editor.cookieRotation"), state.cookieRotation, 0f, 360f, "%.0f°");
+        Widgets.trackpad("ck_scale", Lang.t("irl-redactor.editor.cookieScale"), state.cookieScale, 0.1f, 4f, "%.2f");
+        Widgets.toggleRow("ck_invert", Lang.t("irl-redactor.editor.cookieInvert"), state.cookieInvert);
+        ImGui.endDisabled();
+
+        Widgets.textDisabled(Lang.t("irl-redactor.editor.cookieHint"));
+    }
+
+    private void refreshCookieFiles()
+    {
+        cookieFiles = CookieArray.available().toArray(new String[0]);
+    }
+
+    private void openCookieFolder()
+    {
+        try
+        {
+            java.nio.file.Path d = CookieArray.dir();
+            java.nio.file.Files.createDirectories(d);
+            net.minecraft.util.Util.getOperatingSystem().open(d.toFile());
+        }
+        catch (Exception ignored)
+        {
+            // best-effort: opening the OS file manager is non-critical
         }
     }
 

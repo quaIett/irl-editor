@@ -123,6 +123,9 @@ public final class LightStore
         float intensity, radius, range, outerAngleDeg, innerAngleDeg;
         float beamStrength, anisotropy, vlDensity, bulbSize;
         boolean entitiesOnly, blocksOnly, shadows;
+        String cookie;
+        float cookieRotation, cookieScale;
+        boolean cookieInvert;
 
         static Dto from(PlacedLight l)
         {
@@ -137,6 +140,8 @@ public final class LightStore
             d.beamStrength = l.beamStrength; d.anisotropy = l.anisotropy;
             d.vlDensity = l.vlDensity; d.bulbSize = l.bulbSize;
             d.entitiesOnly = l.entitiesOnly; d.blocksOnly = l.blocksOnly; d.shadows = l.shadows;
+            d.cookie = l.cookie; d.cookieRotation = l.cookieRotation;
+            d.cookieScale = l.cookieScale; d.cookieInvert = l.cookieInvert;
             return d;
         }
 
@@ -153,6 +158,10 @@ public final class LightStore
             l.beamStrength = beamStrength; l.anisotropy = anisotropy;
             l.vlDensity = vlDensity; l.bulbSize = bulbSize;
             l.entitiesOnly = entitiesOnly; l.blocksOnly = blocksOnly; l.shadows = shadows;
+            l.cookie = cookie == null ? "" : cookie;
+            l.cookieRotation = cookieRotation;
+            l.cookieScale = cookieScale == 0f ? 1f : cookieScale;   // legacy/no-cookie default
+            l.cookieInvert = cookieInvert;
             return l;
         }
     }

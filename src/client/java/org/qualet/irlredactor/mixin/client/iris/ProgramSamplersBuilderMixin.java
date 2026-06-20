@@ -5,6 +5,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import org.qualet.irlredactor.light.cookie.CookieArray;
 import org.qualet.irlredactor.light.shadow.PointShadowArray;
 import org.qualet.irlredactor.light.shadow.SpotlightDepthAtlas;
 
@@ -24,5 +25,8 @@ public class ProgramSamplersBuilderMixin
         ProgramSamplers.Builder self = (ProgramSamplers.Builder) (Object) this;
         self.addDynamicSampler(SpotlightDepthAtlas::getGlTextureId, "irl_spotShadowAtlas");
         self.addDynamicSampler(PointShadowArray::getGlTextureId, "irl_pointShadowArray");
+        // Gobo/cookie mask array — registered as 2D, rebound to GL_TEXTURE_2D_ARRAY
+        // by SamplerBindingCubeArrayMixin (like the point cube array).
+        self.addDynamicSampler(CookieArray::getGlTextureId, "irl_cookieArray");
     }
 }
