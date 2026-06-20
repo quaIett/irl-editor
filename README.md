@@ -1,6 +1,6 @@
 <div align="center">
 
-# ✦ IRL-redactor
+# ✦ IRL-editor
 
 **Standalone real-time light editor for Minecraft + Iris**
 
@@ -15,9 +15,9 @@
 
 ---
 
-## What is IRL-redactor?
+## What is IRL-editor?
 
-IRL-redactor is a client-side Fabric mod that brings the [IRLights](https://github.com/quaIett/bbs-irlights-addon)
+IRL-editor is a client-side Fabric mod that brings the [IRLights](https://github.com/quaIett/bbs-irlights-addon)
 lighting system to **vanilla worlds and Replay Mod** — no BBS Mod Studio needed.
 
 Press **`L`** in-game to open a [Dear ImGui](https://github.com/SpaiR/imgui-java) editor where you
@@ -49,10 +49,10 @@ Each Minecraft version lives on its own branch — pick the one that matches you
 
 | Branch | Minecraft | Notes |
 |---|---|---|
-| [`main`](https://github.com/quaIett/irlights/tree/main) | **1.20.4** | primary line |
-| [`port/1.21.1`](https://github.com/quaIett/irlights/tree/port/1.21.1) | **1.21.1** | |
-| [`port/1.21.4`](https://github.com/quaIett/irlights/tree/port/1.21.4) | **1.21.4** | |
-| [`port/1.21.11`](https://github.com/quaIett/irlights/tree/port/1.21.11) | **1.21.11** | raw-GL shadow path |
+| [`main`](https://github.com/quaIett/irl-editor/tree/main) | **1.20.4** | primary line |
+| [`port/1.21.1`](https://github.com/quaIett/irl-editor/tree/port/1.21.1) | **1.21.1** | |
+| [`port/1.21.4`](https://github.com/quaIett/irl-editor/tree/port/1.21.4) | **1.21.4** | |
+| [`port/1.21.11`](https://github.com/quaIett/irl-editor/tree/port/1.21.11) | **1.21.11** | raw-GL shadow path |
 
 ---
 
@@ -109,7 +109,7 @@ build + Loom `include`) and `imgui-java` (binding + lwjgl3 + natives) so the pro
 
 | Repo | Role |
 |---|---|
-| **irlights** *(this repo)* | IRL-redactor — standalone ImGui editor |
+| **irl-editor** *(this repo)* | IRL-editor — standalone ImGui editor |
 | [bbs-irlights-addon](https://github.com/quaIett/bbs-irlights-addon) | IRLights — BBS Mod Studio add-on |
 | [irl-core](https://github.com/quaIett/irl-core) | Shared engine: light SSBO + `.irlights` patcher |
 
