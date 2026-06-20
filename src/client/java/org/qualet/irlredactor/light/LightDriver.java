@@ -5,6 +5,7 @@ import net.minecraft.util.math.Vec3d;
 import org.qualet.irl.light.LightBuffer;
 import org.qualet.irl.light.LightRegistry;
 import org.qualet.irlredactor.light.auto.AutoLightManager;
+import org.qualet.irlredactor.light.cookie.CookieArray;
 import org.qualet.irlredactor.light.shadow.PointShadowArray;
 
 /**
@@ -147,6 +148,11 @@ public final class LightDriver
         float cosOuter = (float) Math.cos(Math.toRadians(outer * 0.5F));
         float cosInner = (float) Math.cos(Math.toRadians(inner * 0.5F));
 
+        // Resolve the gobo image to its texture-array layer (loads on first use,
+        // cached after); -1 = no mask. Cheap per-frame: a name->layer map lookup.
+        int cookieLayer = (l.cookie != null && !l.cookie.isEmpty()) ? CookieArray.resolve(l.cookie) : -1;
+        float cookieFlags = l.cookieInvert ? 1F : 0F;
+
         LightRegistry.registerSpot(
             (float) l.x, (float) l.y, (float) l.z,
             dx, dy, dz,
@@ -154,6 +160,8 @@ public final class LightDriver
             l.intensity, l.range, cosOuter, cosInner,
             l.entitiesOnly, l.blocksOnly,
             l.anisotropy, l.vlDensity, l.beamStrength, l.bulbSize,
-            l.shadows, l.id);
+            l.shadows,
+            (float) cookieLayer, l.cookieRotation, l.cookieScale, cookieFlags,
+            l.id);
     }
 }

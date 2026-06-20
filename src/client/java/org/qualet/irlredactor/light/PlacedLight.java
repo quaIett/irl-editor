@@ -50,6 +50,14 @@ public class PlacedLight
     public boolean entitiesOnly = false;
     public boolean blocksOnly = false;
     public boolean shadows = true;
+
+    /** Spot gobo/cookie: projected mask image. {@link #cookie} is the file name in
+     *  {@code config/irl-redactor/cookies/} ("" = none); spot-only (a point light has
+     *  no projection frustum). Resolved to a texture-array layer by the driver. */
+    public String cookie = "";
+    public float cookieRotation = 0f;   // radians, about the cone axis
+    public float cookieScale = 1f;      // 1 = mask fills the cone
+    public boolean cookieInvert = false;
     /** Auto-light hint, only consulted by {@link LightDriver} on the auto-light
      *  path (manual lights leave it true and ignore it): whether this auto block-
      *  light may take one of the scarce shadow slots. Set false for ultra-weak
@@ -97,6 +105,10 @@ public class PlacedLight
         l.entitiesOnly = s.entitiesOnly;
         l.blocksOnly = s.blocksOnly;
         l.shadows = s.shadows;
+        l.cookie = s.cookie;
+        l.cookieRotation = s.cookieRotation;
+        l.cookieScale = s.cookieScale;
+        l.cookieInvert = s.cookieInvert;
         return l;
     }
 }

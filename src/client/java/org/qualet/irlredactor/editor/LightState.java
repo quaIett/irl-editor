@@ -41,6 +41,14 @@ public class LightState
     public final ImBoolean entitiesOnly = new ImBoolean(false);
     public final ImBoolean blocksOnly   = new ImBoolean(false);
 
+    /** Spot gobo/cookie (spot-only). {@link #cookie} = selected file name ("" = none).
+     *  {@link #cookieRotation} is in DEGREES here (UI-friendly); the engine stores
+     *  radians — converted in {@link LightSync}. */
+    public final ImString  cookie         = new ImString("", 96);
+    public final float[]   cookieRotation = {0f};   // 0..360 degrees
+    public final float[]   cookieScale    = {1f};   // 0.1..4
+    public final ImBoolean cookieInvert   = new ImBoolean(false);
+
     /** Resets the visual parameters to defaults. Identity (name/type) and
      *  placement (pos/dir) are preserved — this is the per-light "Сброс". */
     public void reset()
@@ -59,5 +67,9 @@ public class LightState
         shadows.set(true);
         entitiesOnly.set(false);
         blocksOnly.set(false);
+        cookie.set("");
+        cookieRotation[0] = 0f;
+        cookieScale[0] = 1f;
+        cookieInvert.set(false);
     }
 }
