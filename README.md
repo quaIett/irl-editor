@@ -68,7 +68,6 @@ no manual GLSL edits required.
 | [BSL Shaders](https://modrinth.com/shader/bsl-shaders) | CaptTatsu |
 | [Solas](https://modrinth.com/shader/solas-shader) | Septonious |
 | [Bliss](https://modrinth.com/shader/bliss-shader) | X0nk |
-| [IterationRP](https://www.curseforge.com/minecraft/customization/iterationrp) | Null |
 
 ---
 
