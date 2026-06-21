@@ -7,6 +7,7 @@ import imgui.ImGuiIO;
 import imgui.gl3.ImGuiImplGl3;
 import imgui.glfw.ImGuiImplGlfw;
 import net.minecraft.client.MinecraftClient;
+import org.qualet.irlredactor.IRLRedactorMod;
 
 import java.io.File;
 import java.io.IOException;
@@ -25,6 +26,15 @@ public final class ImGuiRuntime
     private final ImGuiImplGlfw implGlfw = new ImGuiImplGlfw();
     private final ImGuiImplGl3 implGl3 = new ImGuiImplGl3();
     private boolean initialized;
+
+    /**
+     * Set when the ImGui backend is found unusable — typically because another mod
+     * (e.g. Axiom) bundles an <em>unrelocated</em> {@code imgui-java} that shadows
+     * our {@code imgui.gl3.ImGuiImplGl3} on the shared classpath and lacks methods
+     * we call. Once disabled the overlay is a no-op, so a backend conflict degrades
+     * gracefully instead of crashing Minecraft.
+     */
+    private boolean disabled;
 
     private ImGuiRuntime()
     {
@@ -47,21 +57,45 @@ public final class ImGuiRuntime
             return;
         }
 
-        long handle = MinecraftClient.getInstance().getWindow().getHandle();
+        try
+        {
+            long handle = MinecraftClient.getInstance().getWindow().getHandle();
 
-        ImGui.createContext();
+            ImGui.createContext();
 
-        ImGuiIO io = ImGui.getIO();
-        io.setIniFilename(null); // don't litter the run dir with imgui.ini
+            ImGuiIO io = ImGui.getIO();
+            io.setIniFilename(null); // don't litter the run dir with imgui.ini
 
-        EditorStyle.apply(ImGui.getStyle());
-        loadFonts(io);
+            EditorStyle.apply(ImGui.getStyle());
+            loadFonts(io);
 
-        // chain Minecraft's existing GLFW callbacks
-        implGlfw.init(handle, true);
-        implGl3.init("#version 150");
+            // chain Minecraft's existing GLFW callbacks
+            implGlfw.init(handle, true);
 
-        initialized = true;
+            // ImGuiImplGl3.init(String) is missing from some imgui-java builds that
+            // other mods ship unrelocated (e.g. Axiom), which can shadow our class
+            // on the shared classpath. Fall back to the no-arg init present in every
+            // imgui-java version.
+            try
+            {
+                implGl3.init("#version 150");
+            }
+            catch (NoSuchMethodError missingOverload)
+            {
+                implGl3.init();
+            }
+
+            initialized = true;
+        }
+        catch (Throwable t)
+        {
+            // A conflicting imgui-java on the classpath makes the backend unusable.
+            // Disable the editor overlay rather than crashing Minecraft.
+            disabled = true;
+            IRLRedactorMod.LOGGER.warn(
+                "ImGui backend init failed - another mod likely bundles a conflicting "
+                + "imgui-java (e.g. Axiom). The IRL light-editor overlay is disabled.", t);
+        }
     }
 
     // Glyph ranges must stay reachable until the atlas is actually built (on the
@@ -118,19 +152,43 @@ public final class ImGuiRuntime
     /** Renders a single ImGui frame. {@code ui} describes the UI in immediate mode. */
     public void frame(Runnable ui)
     {
+        if (disabled)
+        {
+            return;
+        }
+
         ensureInit();
 
-        // gl3.newFrame() lazily builds device objects + the font atlas texture on
-        // the first call; it must run before ImGui.newFrame() or ImGui asserts
-        // "Font Atlas not built".
-        implGl3.newFrame();
-        implGlfw.newFrame();
-        ImGui.newFrame();
+        if (!initialized)
+        {
+            return; // init just failed and disabled the overlay
+        }
 
-        ui.run();
+        try
+        {
+            // gl3.newFrame() lazily builds device objects + the font atlas texture on
+            // the first call; it must run before ImGui.newFrame() or ImGui asserts
+            // "Font Atlas not built".
+            implGl3.newFrame();
+            implGlfw.newFrame();
+            ImGui.newFrame();
 
-        ImGui.render();
-        implGl3.renderDrawData(ImGui.getDrawData());
+            ui.run();
+
+            ImGui.render();
+            implGl3.renderDrawData(ImGui.getDrawData());
+        }
+        catch (LinkageError e)
+        {
+            // Same conflicting-imgui-java symptom surfacing during rendering (a
+            // shadowed class missing a method/field we call). Disable the overlay
+            // instead of crashing. Our own UI bugs are RuntimeExceptions, not
+            // LinkageErrors, so they still surface normally.
+            disabled = true;
+            IRLRedactorMod.LOGGER.warn(
+                "ImGui backend failed during rendering - conflicting imgui-java on the "
+                + "classpath (e.g. Axiom). Disabling the IRL light-editor overlay.", e);
+        }
     }
 
     public void dispose()
@@ -150,5 +208,13 @@ public final class ImGuiRuntime
     public boolean isInitialized()
     {
         return initialized;
+    }
+
+    /** True when the ImGui backend was found unusable (e.g. a conflicting imgui-java
+     *  shipped unrelocated by another mod) and the editor overlay has been disabled
+     *  to avoid crashing Minecraft. */
+    public boolean isDisabled()
+    {
+        return disabled;
     }
 }
