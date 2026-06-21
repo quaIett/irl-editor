@@ -73,8 +73,33 @@ public final class AutoLightManager
     /** Positions seen so far in the IN-PROGRESS pass; at pass end, byPos entries
      *  not in here are evicted. */
     private static final LongOpenHashSet seenThisPass = new LongOpenHashSet();
-    /** Reused nearest-first feed list (rebuilt each {@link #nearest}). */
+    /** Reused nearest-first feed list (rebuilt LAZILY by {@link #nearest}; see the
+     *  feed cache below — it is NOT re-sorted every render frame). */
     private static final List<PlacedLight> feed = new ArrayList<>();
+
+    // --- nearest-feed cache --------------------------------------------------
+    // Re-sorting all of byPos every render frame is the bulk of LightDriver's
+    // per-frame CPU cost when a scene has many emissive blocks (measured ~12 ms
+    // at a 48-block scan radius, regardless of the source cap — the sort runs
+    // before the cap truncates). But the nearest-first ordering only changes when
+    // the auto-light SET changes (a scan pass adds/evicts a block) or the camera
+    // moves enough to shift it; auto-lights never move (a block is fixed), and
+    // their light DATA stays live through the same PlacedLight instances. So the
+    // feed is rebuilt only on those events and reused verbatim otherwise.
+    /** Bumped on every structural change to {@link #byPos} (add / evict / clear);
+     *  a change from the value the feed was last built for forces a rebuild. */
+    private static int setGeneration;
+    /** {@link #setGeneration} the cached feed was last built for. */
+    private static int feedGeneration = Integer.MIN_VALUE;
+    /** The cap the cached feed was last truncated to (a larger cap needs a rebuild). */
+    private static int feedMax = -1;
+    /** Camera position the cached feed was last sorted around. */
+    private static double feedCamX, feedCamY, feedCamZ;
+    /** Re-sort once the camera moves more than this (blocks, squared) since the
+     *  last sort: the nearest-first cut only matters to within a couple of blocks,
+     *  so a small drift is invisible but saves the per-frame sort while editing in
+     *  place (the common case). */
+    private static final double FEED_RESORT_DIST2 = 4.0; // (2 blocks)^2
 
     // --- rolling-pass cursor / parameters (captured at pass start) -----------
     private static boolean passActive;
@@ -101,6 +126,7 @@ public final class AutoLightManager
         feed.clear();
         passActive = false;
         passChunkIdx = 0;
+        setGeneration++; // invalidate the cached nearest feed
     }
 
     /**
@@ -197,6 +223,7 @@ public final class AutoLightManager
                     if (!seenThisPass.contains(it.next().getLongKey()))
                     {
                         it.remove();
+                        setGeneration++; // invalidate the cached nearest feed
                     }
                 }
             }
@@ -290,33 +317,57 @@ public final class AutoLightManager
     }
 
     /**
-     * Build this frame's nearest-first, capped feed. Nearest-first ordering means
-     * the closest lights win the limited shadow slots (the baker allocates them in
-     * registration order); {@link LightDriver} decides which of them actually cast
-     * shadows (it sets each light's {@code shadows} flag based on the remaining
-     * slot budget). The returned list is owned by the manager — copy it to retain.
+     * The nearest-first, capped feed. Nearest-first ordering means the closest
+     * lights win the limited shadow slots (the baker allocates them in registration
+     * order); {@link LightDriver} decides which of them actually cast shadows (it
+     * sets each light's {@code shadows} flag based on the remaining slot budget).
+     * The returned list is owned by the manager — copy it to retain.
+     *
+     * <p>Cached: the sort runs only when the set, the cap, or the camera position
+     * (beyond {@link #FEED_RESORT_DIST2}) changed since the last build — NOT every
+     * call. See the feed-cache fields.</p>
      */
     public static List<PlacedLight> nearest(Vec3d cameraPos, int max)
     {
-        feed.clear();
         // max <= 0 means feed nothing (the cap slider at 0 = no auto-lights).
         if (byPos.isEmpty() || cameraPos == null || max <= 0)
+        {
+            feed.clear();
+            feedGeneration = setGeneration;
+            feedMax = max;
+            return feed;
+        }
+
+        final double cx = cameraPos.x, cy = cameraPos.y, cz = cameraPos.z;
+        double dcx = cx - feedCamX, dcy = cy - feedCamY, dcz = cz - feedCamZ;
+        boolean camMoved = dcx * dcx + dcy * dcy + dcz * dcz > FEED_RESORT_DIST2;
+
+        // Reuse the cached feed unless the set changed, the cap grew, or the camera
+        // moved enough to shift the nearest cut. The fed PlacedLight INSTANCES are
+        // stable and their fields stay live via the rolling scan, so a reused
+        // ordering never stales the light data — only the nearest-first cut, which
+        // tolerates a couple of blocks of drift.
+        if (setGeneration == feedGeneration && max == feedMax && !camMoved)
         {
             return feed;
         }
 
+        feed.clear();
         for (PlacedLight l : byPos.values())
         {
             feed.add(l);
         }
-
-        final double cx = cameraPos.x, cy = cameraPos.y, cz = cameraPos.z;
         feed.sort((a, b) -> Double.compare(dist2(a, cx, cy, cz), dist2(b, cx, cy, cz)));
-
         if (feed.size() > max)
         {
             feed.subList(max, feed.size()).clear();
         }
+
+        feedGeneration = setGeneration;
+        feedMax = max;
+        feedCamX = cx;
+        feedCamY = cy;
+        feedCamZ = cz;
         return feed;
     }
 
@@ -335,6 +386,7 @@ public final class AutoLightManager
             l = PlacedLight.point();
             l.name = "auto";
             byPos.put(key, l);
+            setGeneration++; // new light -> invalidate the cached nearest feed
         }
         l.x = wx + 0.5;
         l.y = wy + 0.5;
