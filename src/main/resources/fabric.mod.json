@@ -8,6 +8,7 @@
         "qualet"
     ],
     "license": "MIT",
+    "icon": "assets/irl-redactor/icon.png",
     "environment": "*",
     "entrypoints": {
         "main": [
