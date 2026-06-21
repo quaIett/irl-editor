@@ -25,11 +25,11 @@ import org.qualet.irlredactor.replay.ReplayCompat;
 import java.nio.file.Path;
 
 /**
- * Client entrypoint: registers the editor key (L) and wires per-world persistence —
+ * Client entrypoint: registers the editor key (J) and wires per-world persistence —
  * the {@link LightScene} is loaded when a world is joined and saved when it is left
  * (and whenever the editor closes), so a lighting setup is bound to its world.
  *
- * <p>The L key has two behaviours: in a normal world it opens the host
+ * <p>The J key has two behaviours: in a normal world it opens the host
  * {@link LightEditorScreen}; inside a replay (Replay Mod) it toggles the editor as a
  * detached overlay via a raw GLFW read — see {@link #onEndClientTick}.</p>
  */
@@ -40,7 +40,7 @@ public class IRLRedactorClient implements ClientModInitializer
     /** Key of the world currently joined (folder name SP / address MP), or null. */
     private static String currentWorldKey;
 
-    /** Previous raw (GLFW) state of L, for front-edge detection in a replay. */
+    /** Previous raw (GLFW) state of J, for front-edge detection in a replay. */
     private static boolean rawToggleDown;
 
     @Override
@@ -53,7 +53,7 @@ public class IRLRedactorClient implements ClientModInitializer
         openEditor = KeyBindingHelper.registerKeyBinding(new KeyBinding(
             "key.irl-redactor.open_editor",
             InputUtil.Type.KEYSYM,
-            GLFW.GLFW_KEY_L,
+            GLFW.GLFW_KEY_J,
             "category.irl-redactor"
         ));
 
@@ -78,12 +78,12 @@ public class IRLRedactorClient implements ClientModInitializer
     }
 
     /**
-     * Editor toggle. The L key has two paths:
+     * Editor toggle. The J key has two paths:
      * <ul>
-     *   <li><b>In a replay</b> — a raw GLFW read of L toggles the detached overlay,
+     *   <li><b>In a replay</b> — a raw GLFW read of J toggles the detached overlay,
      *       bypassing Minecraft's KeyBinding routing (fires only with no screen
      *       open) and Replay Mod's contextual-keybind remapping, both of which
-     *       swallow L while the timeline screen is up.</li>
+     *       swallow J while the timeline screen is up.</li>
      *   <li><b>Otherwise</b> — the vanilla KeyBinding opens the host
      *       {@link LightEditorScreen}, only when nothing else is open (unchanged).</li>
      * </ul>
@@ -106,15 +106,15 @@ public class IRLRedactorClient implements ClientModInitializer
             keybindPressed = true;
         }
 
-        // Raw front-edge detect for the physical L key (default bind).
+        // Raw front-edge detect for the physical J key (default bind).
         long handle = client.getWindow().getHandle();
-        boolean down = GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_L) == GLFW.GLFW_PRESS;
+        boolean down = GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_J) == GLFW.GLFW_PRESS;
         boolean rawPressed = down && !rawToggleDown;
         rawToggleDown = down;
 
         if (ReplayCompat.inReplay())
         {
-            // Ignore L while ImGui has keyboard focus (typing a light's name).
+            // Ignore J while ImGui has keyboard focus (typing a light's name).
             if (rawPressed && !imguiWantsKeyboard())
             {
                 LightEditorScreen.toggleVisible();
