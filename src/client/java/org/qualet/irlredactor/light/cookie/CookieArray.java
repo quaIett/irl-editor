@@ -4,6 +4,8 @@ import net.fabricmc.loader.api.FabricLoader;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL12;
 import org.lwjgl.opengl.GL13;
+import org.lwjgl.opengl.GL15;
+import org.lwjgl.opengl.GL21;
 import org.lwjgl.opengl.GL30;
 import org.lwjgl.stb.STBImage;
 import org.lwjgl.stb.STBImageResize;
@@ -176,10 +178,37 @@ public final class CookieArray
     }
 
     /** Upload one RES*RES grayscale buffer into the next free layer, allocating the
-     *  array on first use. Returns the layer index. Restores the prior array bind. */
+     *  array on first use. Returns the layer index. Saves and restores the GL state
+     *  it touches.
+     *
+     *  <p>Even standalone we run inside Minecraft / Sodium, which routinely leave a
+     *  {@code GL_PIXEL_UNPACK_BUFFER} (PBO) bound and the pixel-store unpack params
+     *  non-default. With a PBO bound, our client {@link ByteBuffer} pointer is
+     *  reinterpreted by the driver as an offset INTO that PBO and it reads garbage;
+     *  a stale {@code UNPACK_ROW_LENGTH}/{@code SKIP_*} skews the image instead. This
+     *  is why a cookie resolved on the first frame at startup (Sodium streaming
+     *  chunks, PBO/unpack dirty) loaded distorted, while one picked later in a clean
+     *  frame loaded fine. Force a clean, tightly-packed client-memory upload (no PBO,
+     *  alignment 1, no row/skip), then restore the prior state.</p> */
     private static int upload(ByteBuffer pixels)
     {
-        int prev = GL11.glGetInteger(GL30.GL_TEXTURE_BINDING_2D_ARRAY);
+        int prevTex = GL11.glGetInteger(GL30.GL_TEXTURE_BINDING_2D_ARRAY);
+        int prevPbo = GL11.glGetInteger(GL21.GL_PIXEL_UNPACK_BUFFER_BINDING);
+        int prevAlign = GL11.glGetInteger(GL11.GL_UNPACK_ALIGNMENT);
+        int prevRowLen = GL11.glGetInteger(GL11.GL_UNPACK_ROW_LENGTH);
+        int prevSkipRows = GL11.glGetInteger(GL11.GL_UNPACK_SKIP_ROWS);
+        int prevSkipPixels = GL11.glGetInteger(GL11.GL_UNPACK_SKIP_PIXELS);
+        int prevImgHeight = GL11.glGetInteger(GL12.GL_UNPACK_IMAGE_HEIGHT);
+        int prevSkipImages = GL11.glGetInteger(GL12.GL_UNPACK_SKIP_IMAGES);
+
+        GL15.glBindBuffer(GL21.GL_PIXEL_UNPACK_BUFFER, 0);
+        GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 1);
+        GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH, 0);
+        GL11.glPixelStorei(GL11.GL_UNPACK_SKIP_ROWS, 0);
+        GL11.glPixelStorei(GL11.GL_UNPACK_SKIP_PIXELS, 0);
+        GL11.glPixelStorei(GL12.GL_UNPACK_IMAGE_HEIGHT, 0);
+        GL11.glPixelStorei(GL12.GL_UNPACK_SKIP_IMAGES, 0);
+
         if (!initialized)
         {
             init();
@@ -190,7 +219,14 @@ public final class CookieArray
         GL12.glTexSubImage3D(GL30.GL_TEXTURE_2D_ARRAY, 0, 0, 0, layer, RES, RES, 1,
             GL11.GL_RED, GL11.GL_UNSIGNED_BYTE, pixels);
 
-        GL11.glBindTexture(GL30.GL_TEXTURE_2D_ARRAY, prev);
+        GL11.glBindTexture(GL30.GL_TEXTURE_2D_ARRAY, prevTex);
+        GL15.glBindBuffer(GL21.GL_PIXEL_UNPACK_BUFFER, prevPbo);
+        GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, prevAlign);
+        GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH, prevRowLen);
+        GL11.glPixelStorei(GL11.GL_UNPACK_SKIP_ROWS, prevSkipRows);
+        GL11.glPixelStorei(GL11.GL_UNPACK_SKIP_PIXELS, prevSkipPixels);
+        GL11.glPixelStorei(GL12.GL_UNPACK_IMAGE_HEIGHT, prevImgHeight);
+        GL11.glPixelStorei(GL12.GL_UNPACK_SKIP_IMAGES, prevSkipImages);
         return layer;
     }
 
