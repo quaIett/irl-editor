@@ -33,7 +33,7 @@ import org.qualet.irlredactor.light.shadow.BlockShadowCache;
 public class WorldBlockChangeMixin
 {
     @Inject(
-        method = "setBlockState(Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/block/BlockState;II)Z",
+        method = "setBlockState(Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/block/BlockState;I)Z",
         at = @At("HEAD")
     )
     private void irlite$invalidateBlockShadows(
