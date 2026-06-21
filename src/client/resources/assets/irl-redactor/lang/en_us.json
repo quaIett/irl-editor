@@ -54,7 +54,7 @@
     "irl-redactor.editor.autoLightReach": "Auto-light reach",
     "irl-redactor.editor.autoLightRadius": "Scan radius",
     "irl-redactor.editor.autoLightMax": "Max sources",
-    "irl-redactor.editor.autoLightActive": "Active auto-lights: %d",
+    "irl-redactor.editor.autoLightActive": "Active auto-lights: %d (found: %d)",
     "irl-redactor.editor.autoLightWarnTitle": "Experimental feature!",
     "irl-redactor.editor.autoLightWarnBody": "Auto block-lights are experimental. Performance is not guaranteed, especially in densely-lit areas with shadows enabled.",
     "irl-redactor.editor.autoLightWarnOk": "Got it",

@@ -112,10 +112,26 @@ public final class AutoLightManager
     private AutoLightManager()
     {}
 
-    /** Number of auto-lights currently tracked (before the nearest-first cap). */
+    /** Number of auto-lights currently tracked (before the nearest-first cap) —
+     *  i.e. every emissive block the rolling scan has found in range. This can be
+     *  far larger than the number actually used; for the live "how many are really
+     *  active" figure use {@link #activeCount()}. */
     public static int count()
     {
         return byPos.size();
+    }
+
+    /** How many auto-lights were ACTUALLY fed to the pipeline on the last
+     *  {@link #nearest} call — that is {@link #count()} truncated to the source
+     *  cap ({@link LightConfig#autoLightMax()}) and the SSBO headroom. This is the
+     *  meaningful "active" count and never exceeds the limit; the editor shows it
+     *  instead of {@link #count()} so the figure doesn't just climb with the scan. */
+    private static int lastActiveCount;
+
+    /** @see #lastActiveCount */
+    public static int activeCount()
+    {
+        return lastActiveCount;
     }
 
     /** Forget all auto-lights + reset the pass (world left / feature off). */
@@ -124,6 +140,7 @@ public final class AutoLightManager
         byPos.clear();
         seenThisPass.clear();
         feed.clear();
+        lastActiveCount = 0;
         passActive = false;
         passChunkIdx = 0;
         setGeneration++; // invalidate the cached nearest feed
@@ -335,6 +352,7 @@ public final class AutoLightManager
             feed.clear();
             feedGeneration = setGeneration;
             feedMax = max;
+            lastActiveCount = 0;
             return feed;
         }
 
@@ -349,6 +367,7 @@ public final class AutoLightManager
         // tolerates a couple of blocks of drift.
         if (setGeneration == feedGeneration && max == feedMax && !camMoved)
         {
+            lastActiveCount = feed.size();
             return feed;
         }
 
@@ -368,6 +387,7 @@ public final class AutoLightManager
         feedCamX = cx;
         feedCamY = cy;
         feedCamZ = cz;
+        lastActiveCount = feed.size();
         return feed;
     }
 
