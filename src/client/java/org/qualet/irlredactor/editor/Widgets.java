@@ -7,7 +7,9 @@ import imgui.ImVec2;
 import imgui.flag.ImGuiMouseCursor;
 import imgui.type.ImBoolean;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -97,6 +99,62 @@ public final class Widgets
         shadowText(ImGui.getWindowDrawList(), pos.x, pos.y, color, shadow, s);
         ImVec2 size = ImGui.calcTextSize(s);
         ImGui.dummy(size.x, size.y);
+    }
+
+    /** Word-wrapped variant of {@link #textColored} — wraps to the available content
+     *  width so long patcher meta / status lines don't overflow the fixed-width window. */
+    public static void textColoredWrapped(String s, int rgb)
+    {
+        int color = ImColor.rgba((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF, 0xFF);
+        emitWrapped(s, color, COL_DIM_SH);
+    }
+
+    /** Word-wrapped variant of {@link #textDisabled}. */
+    public static void textDisabledWrapped(String s)
+    {
+        emitWrapped(s, COL_DIM, COL_DIM_SH);
+    }
+
+    private static void emitWrapped(String s, int color, int shadow)
+    {
+        float maxW = ImGui.getContentRegionAvail().x;
+        if (maxW <= 1f)
+        {
+            emitText(s, color, shadow);
+            return;
+        }
+        for (String line : wrapToWidth(s, maxW))
+        {
+            emitText(line, color, shadow);
+        }
+    }
+
+    /** Greedy word-wrap of {@code s} into lines no wider than {@code maxW} pixels
+     *  (measured with the current font). Honours explicit {@code \n} breaks; a single
+     *  word wider than {@code maxW} is left on its own (over-long) line. */
+    private static List<String> wrapToWidth(String s, float maxW)
+    {
+        List<String> out = new ArrayList<>();
+        for (String paragraph : s.split("\n", -1))
+        {
+            StringBuilder line = new StringBuilder();
+            for (String word : paragraph.split(" "))
+            {
+                String candidate = line.length() == 0 ? word : line + " " + word;
+                if (line.length() > 0 && ImGui.calcTextSize(candidate).x > maxW)
+                {
+                    out.add(line.toString());
+                    line = new StringBuilder(word);
+                }
+                else
+                {
+                    line.setLength(0);
+                    line.append(candidate);
+                }
+            }
+            out.add(line.toString());
+        }
+        return out;
     }
 
     // ---- button ------------------------------------------------------------

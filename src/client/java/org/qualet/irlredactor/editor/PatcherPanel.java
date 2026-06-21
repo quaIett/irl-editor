@@ -22,6 +22,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Shader-patcher popup — a centred modal that mirrors the original BBS / IRLite
@@ -44,7 +45,7 @@ public class PatcherPanel
     private static final float WIN_W = 440f;
     private static final float WIN_H = 560f;
     private static final float LIST_H = 150f;
-    private static final float FOOTER_H = 84f;
+    private static final float FOOTER_H = 104f;
     private static final float ICON = 20f;
     private static final float ICON_SP = 6f;
 
@@ -72,22 +73,23 @@ public class PatcherPanel
 
     private final ImBoolean newPackEachTime = new ImBoolean(false);
 
-    // Parsed metadata of the selected patch, cached on selection change (a patch
-    // file is tens of KB — never re-parse per frame). Composed into the meta line
-    // each frame so it re-localizes live on a language switch.
+    // The selected patch's @target, cached on selection change (a patch file is
+    // tens of KB — never re-parse per frame). Drives the "which shaderpack is this
+    // for" meta line, re-localized live each frame on a language switch.
     private int parsedPatch = -1;
     private boolean patchBroken;
-    private String patchError = "";
-    private String patchName = "";
     private String patchTarget = "";
-    private String patchVersion = "";
-    private int patchOps;
 
-    // Status line: a localized guard key (statusText == null) OR a raw engine
-    // summary (statusText != null, shown coloured by statusOk).
+    // Status line — always a localized key (so it re-localizes live on a language
+    // switch). statusKind picks the colour: neutral guard / green OK / red error.
+    private static final int ST_GUARD = 0;
+    private static final int ST_OK = 1;
+    private static final int ST_ERR = 2;
+    private static final Object[] NO_ARGS = new Object[0];
+
     private String statusKey = "irl-redactor.patcher.status.selectBoth";
-    private String statusText;
-    private boolean statusOk = true;
+    private Object[] statusArgs = NO_ARGS;
+    private int statusKind = ST_GUARD;
 
     /** Request the popup to open on the next frame (from the editor's button). */
     public void open()
@@ -136,13 +138,13 @@ public class PatcherPanel
 
         // --- shaderpacks ----------------------------------------------------
         headerRow(Lang.t("irl-redactor.patcher.shaderpacks"), this::reload, Shaderpacks::openFolder);
-        selPack = fileList("packs", packs, selPack);
+        selPack = fileList("packs", packs, selPack, "irl-redactor.patcher.emptyPacks");
 
         ImGui.dummy(0f, 2f);
 
         // --- patches --------------------------------------------------------
         headerRow(Lang.t("irl-redactor.patcher.patches"), null, PatchLibrary::openFolder);
-        selPatch = fileList("patches", patchLabels, selPatch);
+        selPatch = fileList("patches", patchLabels, selPatch, "irl-redactor.patcher.emptyPatches");
 
         // --- selected-patch metadata ---------------------------------------
         metaLine();
@@ -195,7 +197,11 @@ public class PatcherPanel
 
     // ---- selected-patch metadata ------------------------------------------
 
-    /** Parses the selected patch once on selection change; renders the meta line each frame. */
+    /** Parses the selected patch once on selection change, then renders a friendly,
+     *  plain-language meta line each frame: which shaderpack the patch is for, and
+     *  whether the selected pack matches. Colour carries the signal (green = matches,
+     *  amber = different pack, red = unreadable) — the bundled font has no
+     *  check/cross/arrow glyphs, so no icon characters are used. */
     private void metaLine()
     {
         if (selPatch != parsedPatch)
@@ -211,36 +217,37 @@ public class PatcherPanel
 
         if (patchBroken)
         {
-            Widgets.textColored(Lang.t("irl-redactor.patcher.meta.broken", patchError), RGB_ERR);
+            Widgets.textColoredWrapped(Lang.t("irl-redactor.patcher.meta.broken"), RGB_ERR);
             return;
         }
 
-        String text = (patchName.isEmpty() ? patchLabels.get(selPatch) : patchName)
-            + " → " + (patchTarget.isEmpty() ? "?" : patchTarget)
-            + (patchVersion.isEmpty() ? "" : " " + patchVersion)
-            + "  (" + Lang.t("irl-redactor.patcher.meta.ops", patchOps) + ")";
-
         String pack = selPack >= 0 && selPack < packs.size() ? packs.get(selPack) : null;
-        if (pack != null && !patchTarget.isEmpty() && !packMatchesTarget(pack, patchTarget))
+        boolean hasTarget = !patchTarget.isEmpty();
+
+        if (pack == null)
         {
-            Widgets.textColored(text + Lang.t("irl-redactor.patcher.meta.mismatch"), RGB_WARN);
+            // A patch is chosen but no shaderpack yet — point the user at the right one.
+            Widgets.textColoredWrapped(hasTarget
+                ? Lang.t("irl-redactor.patcher.meta.pickPack", patchTarget)
+                : Lang.t("irl-redactor.patcher.meta.pickPackNoTarget"), RGB_META);
+        }
+        else if (hasTarget && !packMatchesTarget(pack, patchTarget))
+        {
+            Widgets.textColoredWrapped(Lang.t("irl-redactor.patcher.meta.mismatch", patchTarget), RGB_WARN);
         }
         else
         {
-            Widgets.textColored(text, RGB_META);
+            Widgets.textColoredWrapped(Lang.t("irl-redactor.patcher.meta.match",
+                hasTarget ? patchTarget : pack), RGB_OK);
         }
     }
 
-    /** Caches the selected patch's fields; auto-selects the single matching pack when none is chosen. */
+    /** Caches the selected patch's @target; auto-selects the single matching pack when none is chosen. */
     private void parseSelectedPatch()
     {
         parsedPatch = selPatch;
         patchBroken = false;
-        patchError = "";
-        patchName = "";
         patchTarget = "";
-        patchVersion = "";
-        patchOps = 0;
 
         if (selPatch < 0 || selPatch >= patches.size())
         {
@@ -255,14 +262,11 @@ public class PatcherPanel
         catch (Exception e)
         {
             patchBroken = true;
-            patchError = e.getMessage();
+            LOG.warn("failed to parse patch {}", patches.get(selPatch), e);
             return;
         }
 
-        patchName = parsed.name;
         patchTarget = parsed.target;
-        patchVersion = parsed.packVersion;
-        patchOps = parsed.ops.size();
 
         // No pack chosen yet: if exactly one pack matches the patch's @target, pick it.
         if (selPack < 0 && !patchTarget.isEmpty())
@@ -332,7 +336,8 @@ public class PatcherPanel
         }
         catch (Exception e)
         {
-            setResult(false, "Parse error: " + e.getMessage());
+            LOG.warn("failed to parse patch {}", patches.get(selPatch), e);
+            setStatus(ST_ERR, "irl-redactor.patcher.result.failParse");
             return;
         }
 
@@ -341,15 +346,16 @@ public class PatcherPanel
         {
             PatchResult result = IrlPatchApplier.validate(Shaderpacks.packPath(packName), parsed);
             logResult("validate", result);
-            setResult(result.ok, result.summary);
+            applyResult(true, result, null);
         }
         else
         {
+            String outName = outputName(packName);
             Path source = Shaderpacks.packPath(packName);
-            Path output = Shaderpacks.dir().resolve(outputName(packName));
+            Path output = Shaderpacks.dir().resolve(outName);
             PatchResult result = IrlPatchApplier.apply(source, output, parsed);
             logResult("patch", result);
-            setResult(result.ok, result.summary);
+            applyResult(false, result, outName);
             reload(); // a newly created patched pack should show up
         }
     }
@@ -392,26 +398,74 @@ public class PatcherPanel
 
     private void setGuard(String key)
     {
-        statusKey = key;
-        statusText = null;
-        statusOk = true;
+        setStatus(ST_GUARD, key);
     }
 
-    private void setResult(boolean ok, String message)
+    private void setStatus(int kind, String key, Object... args)
     {
-        statusText = message;
-        statusOk = ok;
+        statusKind = kind;
+        statusKey = key;
+        statusArgs = args;
+    }
+
+    /** Maps the engine's raw English {@link PatchResult} into one friendly, localized
+     *  status line. The full per-op detail still goes to the {@code irl-redactor} log;
+     *  kept editor-side so the shared irl-core engine text is left untouched. */
+    private void applyResult(boolean validate, PatchResult result, String outputName)
+    {
+        if (result.ok)
+        {
+            if (validate)
+            {
+                setStatus(ST_OK, "irl-redactor.patcher.result.validateOk");
+            }
+            else
+            {
+                setStatus(ST_OK, "irl-redactor.patcher.result.patchOk", outputName);
+            }
+            return;
+        }
+
+        // Classify the failure by scanning the engine summary, then show plain text.
+        String s = result.summary == null ? "" : result.summary.toLowerCase(Locale.ROOT);
+        String key;
+        if (s.contains("already patched") || s.contains("already exists"))
+        {
+            key = "irl-redactor.patcher.result.failAlreadyPatched";
+        }
+        else if (s.contains("contract"))
+        {
+            key = "irl-redactor.patcher.result.failVersion";
+        }
+        else if (s.contains("not a folder or .zip") || s.contains("no shaders/"))
+        {
+            key = "irl-redactor.patcher.result.failBadPack";
+        }
+        else if (s.contains("io error"))
+        {
+            key = "irl-redactor.patcher.result.failIo";
+        }
+        else
+        {
+            key = "irl-redactor.patcher.result.failNoFit";
+        }
+        setStatus(ST_ERR, key);
     }
 
     private void statusLine()
     {
-        if (statusText != null)
+        String msg = Lang.t(statusKey, statusArgs);
+        if (statusKind == ST_OK)
         {
-            Widgets.textColored(statusText, statusOk ? RGB_OK : RGB_ERR);
+            Widgets.textColoredWrapped(msg, RGB_OK);
+        }
+        else if (statusKind == ST_ERR)
+        {
+            Widgets.textColoredWrapped(msg, RGB_ERR);
         }
         else
         {
-            Widgets.textDisabled(Lang.t(statusKey));
+            Widgets.textDisabledWrapped(msg);
         }
     }
 
@@ -419,7 +473,7 @@ public class PatcherPanel
 
     /** A bordered, scrollable list of names; returns the (possibly updated) selected index.
      *  Magenta scrollbar + darker background to match the prototype. */
-    private int fileList(String id, List<String> items, int selected)
+    private int fileList(String id, List<String> items, int selected, String emptyKey)
     {
         ImGui.pushStyleColor(ImGuiCol.ChildBg, COL_LIST_BG);
         ImGui.pushStyleColor(ImGuiCol.ScrollbarGrab, COL_SCROLL);
@@ -431,7 +485,7 @@ public class PatcherPanel
         {
             if (items.isEmpty())
             {
-                Widgets.textDisabled(Lang.t("irl-redactor.patcher.empty"));
+                Widgets.textDisabledWrapped(Lang.t(emptyKey));
             }
             for (int i = 0; i < items.size(); i++)
             {
