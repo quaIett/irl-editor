@@ -112,10 +112,18 @@ public class IRLRedactorClient implements ClientModInitializer
         boolean rawPressed = down && !rawToggleDown;
         rawToggleDown = down;
 
-        if (ReplayCompat.inReplay())
+        boolean inReplay = ReplayCompat.inReplay();
+
+        if (inReplay)
         {
+            // Toggle on EITHER signal:
+            //   - keybindPressed fires in fly-camera mode (currentScreen == null, so
+            //     the vanilla KeyBinding is live) — and unlike the raw poll it never
+            //     misses a quick tap (it's edge-driven from the GLFW key callback);
+            //   - rawPressed covers timeline mode, where Replay Mod's screen is open
+            //     and swallows the KeyBinding, so the raw GLFW read is the only signal.
             // Ignore J while ImGui has keyboard focus (typing a light's name).
-            if (rawPressed && !imguiWantsKeyboard())
+            if ((rawPressed || keybindPressed) && !imguiWantsKeyboard())
             {
                 LightEditorScreen.toggleVisible();
             }
