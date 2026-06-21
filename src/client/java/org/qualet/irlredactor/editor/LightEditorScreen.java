@@ -131,8 +131,35 @@ public class LightEditorScreen extends Screen
         {
             return;
         }
+        ImGuiRuntime runtime = ImGuiRuntime.get();
+        if (runtime.isDisabled())
+        {
+            // Backend already known unusable (conflicting imgui-java, e.g. Axiom) —
+            // don't leave the cursor/input trapped behind an overlay that can't draw.
+            forceClose(mc);
+            return;
+        }
+
         // Target framebuffer 0 (the window) — MC's frame is already there.
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, 0);
-        ImGuiRuntime.get().frame(PANEL::draw);
+        runtime.frame(PANEL::draw);
+
+        // The first frame may have just discovered the backend is unusable.
+        if (runtime.isDisabled())
+        {
+            forceClose(mc);
+        }
+    }
+
+    /** Force the editor closed on both entry paths when the ImGui backend is
+     *  disabled, so the user isn't stuck with a freed cursor / swallowed input
+     *  behind an overlay that renders nothing. */
+    private static void forceClose(MinecraftClient mc)
+    {
+        editorVisible = false;
+        if (mc.currentScreen instanceof LightEditorScreen)
+        {
+            mc.setScreen(null);
+        }
     }
 }
