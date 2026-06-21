@@ -54,7 +54,7 @@
     "irl-redactor.editor.autoLightReach": "Дальность авто-света",
     "irl-redactor.editor.autoLightRadius": "Радиус сканирования",
     "irl-redactor.editor.autoLightMax": "Лимит источников",
-    "irl-redactor.editor.autoLightActive": "Активных авто-светов: %d",
+    "irl-redactor.editor.autoLightActive": "Активных авто-светов: %d (найдено: %d)",
     "irl-redactor.editor.autoLightWarnTitle": "Экспериментальная функция!",
     "irl-redactor.editor.autoLightWarnBody": "Авто-свет от блоков — экспериментальная функция. Производительность не гарантируется, особенно в плотно освещённых местах с включёнными тенями.",
     "irl-redactor.editor.autoLightWarnOk": "Понятно",

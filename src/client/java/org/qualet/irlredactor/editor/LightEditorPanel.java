@@ -633,7 +633,11 @@ public class LightEditorPanel
         Widgets.trackpad("cfg_automax", Lang.t("irl-redactor.editor.autoLightMax"), cfgAutoMax, 0f, 2000f, "%.0f");
         LightConfig.autoLightMax = Math.round(cfgAutoMax[0]);
 
-        Widgets.textDisabled(Lang.t("irl-redactor.editor.autoLightActive", AutoLightManager.count()));
+        // Show how many auto-lights are ACTUALLY active (capped by the source limit
+        // + SSBO headroom), with the raw scan total in parentheses — the active
+        // figure never climbs past "Max sources", unlike the raw tracked count.
+        Widgets.textDisabled(Lang.t("irl-redactor.editor.autoLightActive",
+            AutoLightManager.activeCount(), AutoLightManager.count()));
         ImGui.endDisabled();
 
         ImGui.dummy(0f, 2f);
