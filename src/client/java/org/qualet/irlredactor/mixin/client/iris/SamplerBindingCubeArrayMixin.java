@@ -11,7 +11,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.qualet.irlredactor.light.cookie.CookieArray;
-import org.qualet.irlredactor.light.shadow.PointShadowArray;
+import org.qualet.irl.light.shadow.PointShadowArray;
 
 import java.util.function.IntSupplier;
 

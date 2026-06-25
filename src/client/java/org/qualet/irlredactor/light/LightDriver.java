@@ -6,7 +6,7 @@ import org.qualet.irl.light.LightBuffer;
 import org.qualet.irl.light.LightRegistry;
 import org.qualet.irlredactor.light.auto.AutoLightManager;
 import org.qualet.irlredactor.light.cookie.CookieArray;
-import org.qualet.irlredactor.light.shadow.PointShadowArray;
+import org.qualet.irl.light.shadow.PointShadowArray;
 
 /**
  * Feeds the {@link LightScene} into the {@link LightRegistry} each frame — the
