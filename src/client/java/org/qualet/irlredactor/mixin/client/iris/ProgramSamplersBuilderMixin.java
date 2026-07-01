@@ -7,6 +7,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.qualet.irlredactor.light.cookie.CookieArray;
 import org.qualet.irl.light.shadow.PointShadowArray;
+import org.qualet.irl.light.shadow.SpotShadowPyramid;
 import org.qualet.irl.light.shadow.SpotlightDepthAtlas;
 
 /**
@@ -25,6 +26,11 @@ public class ProgramSamplersBuilderMixin
         ProgramSamplers.Builder self = (ProgramSamplers.Builder) (Object) this;
         self.addDynamicSampler(SpotlightDepthAtlas::getGlTextureId, "irl_spotShadowAtlas");
         self.addDynamicSampler(PointShadowArray::getGlTextureId, "irl_pointShadowArray");
+        // F1a: min/max mip pyramid of the spot atlas (plain 2D, no target rebind needed).
+        // Added in lockstep with the addon BEFORE any patch regen/sync: the .irlights
+        // patches are shared copies — a pack with IRLITE_SHADOW_PYRAMID and no binding
+        // here would sample whatever sits on unit 0.
+        self.addDynamicSampler(SpotShadowPyramid::getGlTextureId, "irl_spotShadowPyramid");
         // Gobo/cookie mask array — registered as 2D, rebound to GL_TEXTURE_2D_ARRAY
         // by SamplerBindingCubeArrayMixin (like the point cube array).
         self.addDynamicSampler(CookieArray::getGlTextureId, "irl_cookieArray");
