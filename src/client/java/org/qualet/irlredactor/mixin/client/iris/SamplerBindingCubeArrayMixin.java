@@ -68,11 +68,11 @@ public abstract class SamplerBindingCubeArrayMixin
             return;
         }
 
-        // F2b: face-major point EVSM is a 2D array too
+        // F2b: point MSM is sampled through a CUBE_MAP_ARRAY view (hardware-seamless face edges)
         int pointEvsmId = PointShadowEvsm.getGlTextureId();
         if (pointEvsmId != 0 && id == pointEvsmId)
         {
-            IrisRenderSystem.bindTextureToUnit(GL30.GL_TEXTURE_2D_ARRAY, this.textureUnit, id);
+            IrisRenderSystem.bindTextureToUnit(GL40.GL_TEXTURE_CUBE_MAP_ARRAY, this.textureUnit, id);
             ci.cancel();
         }
     }
