@@ -13,14 +13,13 @@ public final class LightConfig
     /** Adapter handed to {@link org.qualet.irl.light.shadow.ShadowEngine} at client
      *  init: the shadow-relevant subset of this config (the five getters
      *  {@link ShadowConfig} exposes), delegating to the static getters below. */
-    public static final ShadowConfig SHADOW = new ShadowConfig()
-    {
-        public int shadowQuality()     { return LightConfig.shadowQuality(); }
-        public boolean shadowCache()   { return LightConfig.shadowCache(); }
-        public int shadowBakeBudget()  { return LightConfig.shadowBakeBudget(); }
-        public boolean shadowBlocks()  { return LightConfig.shadowBlocks(); }
-        public int shadowBlockRadius() { return LightConfig.shadowBlockRadius(); }
-    };
+    public static final ShadowConfig SHADOW = ShadowConfig.builder()
+            .shadowQuality(LightConfig::shadowQuality)
+            .shadowCache(LightConfig::shadowCache)
+            .shadowBakeBudget(LightConfig::shadowBakeBudget)
+            .shadowBlocks(LightConfig::shadowBlocks)
+            .shadowBlockRadius(LightConfig::shadowBlockRadius)
+            .build();
 
     /** Draw in-world wireframe gizmos for placed lights (default off). */
     public static boolean showGuides = false;

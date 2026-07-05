@@ -12,12 +12,15 @@ import net.minecraft.client.util.InputUtil;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.WorldSavePath;
 import org.lwjgl.glfw.GLFW;
+import org.lwjgl.opengl.GL30;
+import org.qualet.irl.light.IrlSamplers;
 import org.qualet.irl.light.shadow.RedactorEntityCasterSource;
 import org.qualet.irl.light.shadow.ShadowEngine;
 import org.qualet.irl.patcher.Patcher;
 import org.qualet.irlredactor.editor.LightEditorScreen;
 import org.qualet.irlredactor.imgui.ImGuiRuntime;
 import org.qualet.irlredactor.patcher.RedactorPatcherHost;
+import org.qualet.irlredactor.light.cookie.CookieArray;
 import org.qualet.irlredactor.light.LightConfig;
 import org.qualet.irlredactor.light.LightGuideRenderer;
 import org.qualet.irlredactor.light.LightScene;
@@ -56,6 +59,10 @@ public class IRLRedactorClient implements ClientModInitializer
         // Install the shadow caster source (vanilla entity dispatcher) + config so the
         // shared irl-core shadow orchestration can reach this mod's per-mod pieces.
         ShadowEngine.install(new RedactorEntityCasterSource(), LightConfig.SHADOW);
+
+        // Register the per-mod gobo/cookie mask array into the shared sampler registry;
+        // rebound from its 2D registration to GL_TEXTURE_2D_ARRAY at bind time.
+        IrlSamplers.register("irl_cookieArray", CookieArray::getGlTextureId, GL30.GL_TEXTURE_2D_ARRAY);
 
         openEditor = KeyBindingHelper.registerKeyBinding(new KeyBinding(
             "key.irl-redactor.open_editor",

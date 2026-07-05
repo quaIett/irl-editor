@@ -3,6 +3,7 @@ package org.qualet.irlredactor.light;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.util.math.Vec3d;
 import org.qualet.irl.light.LightBuffer;
+import org.qualet.irl.light.LightMath;
 import org.qualet.irl.light.LightRegistry;
 import org.qualet.irlredactor.light.auto.AutoLightManager;
 import org.qualet.irlredactor.light.cookie.CookieArray;
@@ -127,26 +128,13 @@ public final class LightDriver
     private static void emitSpot(PlacedLight l)
     {
         // Normalize the world-space direction defensively (matches LightCollector).
-        float dx = l.dirX, dy = l.dirY, dz = l.dirZ;
-        float len = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (len > 1e-4f)
-        {
-            dx /= len;
-            dy /= len;
-            dz /= len;
-        }
-        else
-        {
-            dx = 0f;
-            dy = 0f;
-            dz = 1f;
-        }
+        float[] dir = LightMath.normalizeDir(l.dirX, l.dirY, l.dirZ, 0f, 0f, 1f, new float[3]);
+        float dx = dir[0], dy = dir[1], dz = dir[2];
 
         // Full cone angles (degrees) -> half-angle cosines, exactly as IRLite did.
-        float outer = l.outerAngleDeg;
-        float inner = Math.min(l.innerAngleDeg, outer);
-        float cosOuter = (float) Math.cos(Math.toRadians(outer * 0.5F));
-        float cosInner = (float) Math.cos(Math.toRadians(inner * 0.5F));
+        LightMath.Cone cone = LightMath.cone(l.outerAngleDeg, l.innerAngleDeg);
+        float cosOuter = cone.cosOuter();
+        float cosInner = cone.cosInner();
 
         // Resolve the gobo image to its texture-array layer (loads on first use,
         // cached after); -1 = no mask. Cheap per-frame: a name->layer map lookup.
