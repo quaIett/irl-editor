@@ -13,7 +13,7 @@ import java.util.List;
 
 /**
  * {@link PatcherHost} for the standalone editor: the Minecraft game dir, Iris's
- * shaderpacks directory + listing, the OS folder-open, and the 6 .irlights bundled
+ * shaderpacks directory + listing, the OS folder-open, and the 7 .irlights bundled
  * under {@code assets/irl-redactor/patches/}. Installed at client init via
  * {@code Patcher.install(new RedactorPatcherHost())}.
  */
@@ -27,6 +27,7 @@ public final class RedactorPatcherHost implements PatcherHost
         "complementaryreimagined.irlights",
         "iterationrp.irlights",
         "photon.irlights",
+        "rethinkingvoxels.irlights",
         "solas.irlights"
     );
 
