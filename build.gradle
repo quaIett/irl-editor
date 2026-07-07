@@ -1,5 +1,5 @@
 plugins {
-	id 'fabric-loom' version '1.15-SNAPSHOT'
+	id 'fabric-loom' version '1.15.5'
 	id 'maven-publish'
 }
 
@@ -38,6 +38,9 @@ repositories {
 	}
 	// glsl-transformer (io.github.douira), an Iris runtime dependency.
 	maven { url = "https://maven.gegy.dev/" }
+	// irl-core (shared engine) is published here by `gradlew publishToMavenLocal`
+	// in ../irl-core — must be resolvable before this mod builds.
+	mavenLocal()
 	mavenCentral()
 }
 
@@ -52,10 +55,11 @@ dependencies {
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
 	// --- Shared BBS-free engine: light SSBO + .irlights patcher (irl-core) ---
-	// Plain Java lib via Gradle composite build (settings.gradle includeBuild),
-	// bundled into the mod jar with Loom's `include` (synthesizes a stub fabric.mod.json).
-	clientImplementation "org.qualet:irl-core:1.0-obt"
-	include "org.qualet:irl-core:1.0-obt"
+	// Per-version Loom module from mavenLocal: modClientImplementation remaps it from
+	// intermediary to this mod's named mappings; `include` bundles it (JiJ). Publish it
+	// with `gradlew publishToMavenLocal` in ../irl-core before building this mod.
+	modClientImplementation "org.qualet:irl-core:1.1"
+	include "org.qualet:irl-core:1.1"
 
 	// imgui-java: binding + LWJGL3 backend (client only). LWJGL itself is provided
 	// by Minecraft, so the backend's transitive LWJGL is excluded to avoid a second

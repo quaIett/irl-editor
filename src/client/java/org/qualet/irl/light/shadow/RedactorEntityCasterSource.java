@@ -1,4 +1,4 @@
-package org.qualet.irlredactor.light.shadow;
+package org.qualet.irl.light.shadow;
 
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.LightmapTextureManager;

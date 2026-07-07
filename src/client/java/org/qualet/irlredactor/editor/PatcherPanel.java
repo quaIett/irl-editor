@@ -22,7 +22,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 /**
  * Shader-patcher popup — a centred modal that mirrors the original BBS / IRLite
@@ -231,7 +230,7 @@ public class PatcherPanel
                 ? Lang.t("irl-redactor.patcher.meta.pickPack", patchTarget)
                 : Lang.t("irl-redactor.patcher.meta.pickPackNoTarget"), RGB_META);
         }
-        else if (hasTarget && !packMatchesTarget(pack, patchTarget))
+        else if (hasTarget && !Shaderpacks.packMatchesTarget(pack, patchTarget))
         {
             Widgets.textColoredWrapped(Lang.t("irl-redactor.patcher.meta.mismatch", patchTarget), RGB_WARN);
         }
@@ -274,7 +273,7 @@ public class PatcherPanel
             int match = -1;
             for (int i = 0; i < packs.size(); i++)
             {
-                if (packMatchesTarget(packs.get(i), patchTarget))
+                if (Shaderpacks.packMatchesTarget(packs.get(i), patchTarget))
                 {
                     if (match >= 0)
                     {
@@ -289,24 +288,6 @@ public class PatcherPanel
                 selPack = match;
             }
         }
-    }
-
-    /** "Photon_v1.2.zip" matches target "Photon": lowercase, alphanumerics only, substring. */
-    private static boolean packMatchesTarget(String pack, String target)
-    {
-        String p = norm(pack);
-        String t = norm(target);
-        return t.isEmpty() || p.contains(t);
-    }
-
-    private static String norm(String s)
-    {
-        String lower = s.toLowerCase();
-        if (lower.endsWith(".zip"))
-        {
-            lower = lower.substring(0, lower.length() - 4);
-        }
-        return lower.replaceAll("[^a-z0-9]", "");
     }
 
     // ---- Validate / Patch --------------------------------------------------
@@ -350,7 +331,7 @@ public class PatcherPanel
         }
         else
         {
-            String outName = outputName(packName);
+            String outName = Shaderpacks.outputName(parsed, packName, newPackEachTime.get());
             Path source = Shaderpacks.packPath(packName);
             Path output = Shaderpacks.dir().resolve(outName);
             PatchResult result = IrlPatchApplier.apply(source, output, parsed);
@@ -358,34 +339,6 @@ public class PatcherPanel
             applyResult(false, result, outName);
             reload(); // a newly created patched pack should show up
         }
-    }
-
-    private String outputName(String packName)
-    {
-        String base = packName;
-        if (base.toLowerCase().endsWith(".zip"))
-        {
-            base = base.substring(0, base.length() - 4);
-        }
-        base = base + "_IRLights";
-
-        if (!newPackEachTime.get())
-        {
-            return base;
-        }
-        if (!Files.exists(Shaderpacks.dir().resolve(base)))
-        {
-            return base;
-        }
-        for (int i = 2; i < 1000; i++)
-        {
-            String candidate = base + "_" + i;
-            if (!Files.exists(Shaderpacks.dir().resolve(candidate)))
-            {
-                return candidate;
-            }
-        }
-        return base;
     }
 
     private static void logResult(String tag, PatchResult result)
@@ -426,28 +379,26 @@ public class PatcherPanel
             return;
         }
 
-        // Classify the failure by scanning the engine summary, then show plain text.
-        String s = result.summary == null ? "" : result.summary.toLowerCase(Locale.ROOT);
+        // Classify the failure by its Outcome, then show plain text.
         String key;
-        if (s.contains("already patched") || s.contains("already exists"))
+        switch (result.outcome)
         {
-            key = "irl-redactor.patcher.result.failAlreadyPatched";
-        }
-        else if (s.contains("contract"))
-        {
-            key = "irl-redactor.patcher.result.failVersion";
-        }
-        else if (s.contains("not a folder or .zip") || s.contains("no shaders/"))
-        {
-            key = "irl-redactor.patcher.result.failBadPack";
-        }
-        else if (s.contains("io error"))
-        {
-            key = "irl-redactor.patcher.result.failIo";
-        }
-        else
-        {
-            key = "irl-redactor.patcher.result.failNoFit";
+            case ALREADY_PATCHED:
+            case ADD_FILE_EXISTS:
+                key = "irl-redactor.patcher.result.failAlreadyPatched";
+                break;
+            case CONTRACT_MISMATCH:
+                key = "irl-redactor.patcher.result.failVersion";
+                break;
+            case BAD_SOURCE:
+                key = "irl-redactor.patcher.result.failBadPack";
+                break;
+            case IO_ERROR:
+                key = "irl-redactor.patcher.result.failIo";
+                break;
+            default:
+                key = "irl-redactor.patcher.result.failNoFit";
+                break;
         }
         setStatus(ST_ERR, key);
     }
