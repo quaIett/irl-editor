@@ -49,6 +49,7 @@
     "irl-redactor.editor.shadowBlockRadius": "Block shadow radius",
     "irl-redactor.editor.showGuides": "Show guides",
     "irl-redactor.editor.autoLights": "Auto block-lights",
+    "irl-redactor.editor.autoLightCulling": "Cull hidden lights",
     "irl-redactor.editor.autoLightShadows": "Auto-light shadows",
     "irl-redactor.editor.autoLightIntensity": "Auto-light brightness",
     "irl-redactor.editor.autoLightReach": "Auto-light reach",
