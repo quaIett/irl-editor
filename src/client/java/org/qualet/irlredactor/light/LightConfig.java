@@ -49,6 +49,15 @@ public final class LightConfig
     /** Master toggle for auto block-lights. Default OFF — it's an experimental,
      *  potentially heavy mode the user opts into. */
     public static boolean autoLights = false;
+    /** Surface culling for auto block-lights (default ON). When on, an emissive
+     *  block only becomes a light if it is EXPOSED — i.e. at least one of its six
+     *  face-neighbours is an opening (air / glass / any non-opaque, non-emitter
+     *  cell). Blocks fully buried inside opaque terrain, or in the interior of a
+     *  solid cluster of emitters, emit nothing: they're invisible and their light
+     *  can't escape, so they'd only waste light slots (and are redundant with the
+     *  cluster's outer shell, which stays lit). Turn off to light every emissive
+     *  block in range regardless of exposure. */
+    public static boolean autoLightCulling = true;
     /** Whether auto block-lights cast shadows. Default OFF: shadows are by far the
      *  heaviest part — the shaderpack does ~28 PCSS texture taps PER shadowed light
      *  PER lit pixel (capped at 16 lights), plus per-light cube bakes. Unshadowed
@@ -112,6 +121,11 @@ public final class LightConfig
     public static boolean autoLightShadows()
     {
         return autoLightShadows;
+    }
+
+    public static boolean autoLightCulling()
+    {
+        return autoLightCulling;
     }
 
     public static float autoLightIntensity()
