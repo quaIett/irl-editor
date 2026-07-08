@@ -2,6 +2,8 @@ package org.qualet.irlredactor.light;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.InstanceCreator;
+import com.google.gson.JsonDeserializer;
 import com.google.gson.reflect.TypeToken;
 import net.fabricmc.loader.api.FabricLoader;
 import org.qualet.irlredactor.IRLRedactorMod;
@@ -9,9 +11,9 @@ import org.qualet.irlredactor.IRLRedactorMod;
 import java.io.IOException;
 import java.io.Reader;
 import java.io.Writer;
+import java.lang.reflect.Type;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -23,10 +25,35 @@ import java.util.List;
  *
  * <p>Stored in the config dir rather than inside the world save so it works
  * uniformly for SP and MP without needing write access to a remote world.</p>
+ *
+ * <p>{@link PlacedLight} is serialized directly (no separate DTO) — its
+ * {@code transient} fields ({@code id}, {@code autoShadowEligible}) are skipped
+ * by Gson automatically. The {@link InstanceCreator} below routes deserialization
+ * through {@code new PlacedLight()} instead of Gson's default unsafe-allocate, so
+ * every loaded light still mints a fresh stable id (advances the counter, exactly
+ * like the old {@code Dto.to()} did) rather than coming back as {@code id == 0}.</p>
+ *
+ * <p>{@link PlacedLight.Type} gets its own lenient deserializer instead of Gson's
+ * native enum handling: the old {@code Dto} stored the type as a {@code String}
+ * and read it back with {@code "SPOT".equals(type) ? SPOT : POINT}, so any
+ * unknown/corrupt value silently fell back to {@code POINT} and the rest of the
+ * file still loaded. Gson's default enum adapter instead throws on an unknown
+ * constant, which fails the whole {@code List<PlacedLight>} parse and (via the
+ * catch in {@link #load}) drops every light in the file. The adapter below
+ * reproduces the exact old (case-sensitive) semantics; writing is untouched
+ * (still Gson's default {@code name()} serialization), so the on-disk format is
+ * unchanged.</p>
  */
 public final class LightStore
 {
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final Gson GSON = new GsonBuilder()
+        .setPrettyPrinting()
+        .registerTypeAdapter(PlacedLight.class, (InstanceCreator<PlacedLight>) (Type t) -> new PlacedLight())
+        .registerTypeAdapter(PlacedLight.Type.class, (JsonDeserializer<PlacedLight.Type>) (json, t, ctx) ->
+            "SPOT".equals(json.isJsonPrimitive() ? json.getAsString() : null)
+                ? PlacedLight.Type.SPOT
+                : PlacedLight.Type.POINT)
+        .create();
 
     private LightStore()
     {}
@@ -49,23 +76,14 @@ public final class LightStore
             return;
         }
 
-        List<Dto> dtos = new ArrayList<>(lights.size());
-        for (PlacedLight l : lights)
-        {
-            if (l != null)
-            {
-                dtos.add(Dto.from(l));
-            }
-        }
-
         try
         {
             Files.createDirectories(dir());
             try (Writer w = Files.newBufferedWriter(file(key)))
             {
-                GSON.toJson(dtos, w);
+                GSON.toJson(lights, new TypeToken<List<PlacedLight>>() {}.getType(), w);
             }
-            IRLRedactorMod.LOGGER.info("Saved {} lights for world '{}'", dtos.size(), key);
+            IRLRedactorMod.LOGGER.info("Saved {} lights for world '{}'", lights.size(), key);
         }
         catch (IOException e)
         {
@@ -91,78 +109,40 @@ public final class LightStore
 
         try (Reader r = Files.newBufferedReader(f))
         {
-            List<Dto> dtos = GSON.fromJson(r, new TypeToken<List<Dto>>() {}.getType());
-            if (dtos == null)
+            List<PlacedLight> lights = GSON.fromJson(r, new TypeToken<List<PlacedLight>>() {}.getType());
+            if (lights == null)
             {
                 return;
             }
-            for (Dto d : dtos)
+            for (PlacedLight l : lights)
             {
-                if (d != null)
+                if (l == null)
                 {
-                    LightScene.add(d.to());
+                    continue;
                 }
+                // Gson leaves a field missing from the JSON at its construction
+                // default, so a pre-cookie save already comes back sane
+                // (cookie="" / cookieScale=1f). These guards only cover an
+                // explicit null/0 written by some older or hand-edited file.
+                if (l.name == null)
+                {
+                    l.name = "Источник";
+                }
+                if (l.cookie == null)
+                {
+                    l.cookie = "";
+                }
+                if (l.cookieScale == 0f)
+                {
+                    l.cookieScale = 1f;
+                }
+                LightScene.add(l);
             }
             IRLRedactorMod.LOGGER.info("Loaded {} lights for world '{}'", LightScene.count(), key);
         }
         catch (Exception e)
         {
             IRLRedactorMod.LOGGER.error("Failed to load lights for world '{}'", key, e);
-        }
-    }
-
-    /** Plain serialization shape — decoupled from {@link PlacedLight} so the id /
-     *  static counter aren't persisted (a fresh id is minted on load). */
-    private static final class Dto
-    {
-        String type;
-        String name;
-        double x, y, z;
-        float dirX, dirY, dirZ;
-        float r, g, b, a;
-        float intensity, radius, range, outerAngleDeg, innerAngleDeg;
-        float beamStrength, anisotropy, vlDensity, bulbSize;
-        boolean entitiesOnly, blocksOnly, shadows;
-        String cookie;
-        float cookieRotation, cookieScale;
-        boolean cookieInvert;
-
-        static Dto from(PlacedLight l)
-        {
-            Dto d = new Dto();
-            d.type = l.type.name();
-            d.name = l.name;
-            d.x = l.x; d.y = l.y; d.z = l.z;
-            d.dirX = l.dirX; d.dirY = l.dirY; d.dirZ = l.dirZ;
-            d.r = l.r; d.g = l.g; d.b = l.b; d.a = l.a;
-            d.intensity = l.intensity; d.radius = l.radius; d.range = l.range;
-            d.outerAngleDeg = l.outerAngleDeg; d.innerAngleDeg = l.innerAngleDeg;
-            d.beamStrength = l.beamStrength; d.anisotropy = l.anisotropy;
-            d.vlDensity = l.vlDensity; d.bulbSize = l.bulbSize;
-            d.entitiesOnly = l.entitiesOnly; d.blocksOnly = l.blocksOnly; d.shadows = l.shadows;
-            d.cookie = l.cookie; d.cookieRotation = l.cookieRotation;
-            d.cookieScale = l.cookieScale; d.cookieInvert = l.cookieInvert;
-            return d;
-        }
-
-        PlacedLight to()
-        {
-            PlacedLight l = new PlacedLight(); // fresh stable id (advances counter -> no collisions)
-            l.type = "SPOT".equals(type) ? PlacedLight.Type.SPOT : PlacedLight.Type.POINT;
-            l.name = name == null ? "Источник" : name;
-            l.x = x; l.y = y; l.z = z;
-            l.dirX = dirX; l.dirY = dirY; l.dirZ = dirZ;
-            l.r = r; l.g = g; l.b = b; l.a = a;
-            l.intensity = intensity; l.radius = radius; l.range = range;
-            l.outerAngleDeg = outerAngleDeg; l.innerAngleDeg = innerAngleDeg;
-            l.beamStrength = beamStrength; l.anisotropy = anisotropy;
-            l.vlDensity = vlDensity; l.bulbSize = bulbSize;
-            l.entitiesOnly = entitiesOnly; l.blocksOnly = blocksOnly; l.shadows = shadows;
-            l.cookie = cookie == null ? "" : cookie;
-            l.cookieRotation = cookieRotation;
-            l.cookieScale = cookieScale == 0f ? 1f : cookieScale;   // legacy/no-cookie default
-            l.cookieInvert = cookieInvert;
-            return l;
         }
     }
 }

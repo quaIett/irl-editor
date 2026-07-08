@@ -13,6 +13,7 @@ import net.minecraft.client.render.Camera;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
+import org.qualet.irl.light.LightMath;
 import org.qualet.irlredactor.light.LightConfig;
 import org.qualet.irlredactor.light.LightScene;
 import org.qualet.irlredactor.light.PlacedLight;
@@ -719,15 +720,9 @@ public class LightEditorPanel
 
             if (spot)
             {
-                // dir = the model's forward (local +Z) column, normalized.
-                float dx = gizmoModel[8], dy = gizmoModel[9], dz = gizmoModel[10];
-                float len = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
-                if (len > 1e-4f)
-                {
-                    state.dir[0] = dx / len;
-                    state.dir[1] = dy / len;
-                    state.dir[2] = dz / len;
-                }
+                // dir = the model's forward (local +Z) column, normalized (falls
+                // back to straight down for a degenerate column, matching orientationFromDir).
+                LightMath.normalizeDir(gizmoModel[8], gizmoModel[9], gizmoModel[10], 0f, -1f, 0f, state.dir);
                 // Persist the manipulated rotation for next frame's continuity.
                 gizmoRot.set(gizmoModel).setTranslation(0f, 0f, 0f);
             }
@@ -739,13 +734,8 @@ public class LightEditorPanel
     /** Rebuilds {@link #gizmoRot} as the rotation taking local +Z to {@code state.dir}. */
     private void orientationFromDir()
     {
-        float dx = state.dir[0], dy = state.dir[1], dz = state.dir[2];
-        float len = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (len < 1e-4f)
-        {
-            dx = 0f; dy = -1f; dz = 0f; len = 1f;
-        }
-        gizmoQuat.rotationTo(0f, 0f, 1f, dx / len, dy / len, dz / len);
+        float[] dir = LightMath.normalizeDir(state.dir[0], state.dir[1], state.dir[2], 0f, -1f, 0f, new float[3]);
+        gizmoQuat.rotationTo(0f, 0f, 1f, dir[0], dir[1], dir[2]);
         gizmoRot.rotation(gizmoQuat);
     }
 

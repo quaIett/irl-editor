@@ -5,6 +5,8 @@ pluginManagement {
     }
 }
 
-// Shared BBS-free engine (light SSBO + .irlights patcher), pulled in as a Gradle
-// composite build and consumed by the coordinate org.qualet:irl-core (see build.gradle).
-includeBuild("../irl-core")
+// Shared BBS-free engine (light SSBO + .irlights patcher + shadow orchestration) is now
+// a per-version Loom module, published to mavenLocal and consumed via
+// modClientImplementation (see build.gradle). Run `gradlew publishToMavenLocal` in
+// ../irl-core before building this mod. The old Gradle composite build (includeBuild)
+// no longer works now that core carries MC-typed shadow code needing a Loom remap.

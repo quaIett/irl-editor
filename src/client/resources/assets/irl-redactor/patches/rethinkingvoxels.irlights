@@ -1,7 +1,6 @@
-# IRLite point + spot lights for BSL Shaders v10 (by Capt Tatsu).
-@name    BSL lights
-@target  BSL
-@packversion v10
+# IRLite point + spot lights for RethinkingVoxels (a Complementary fork, by gri573 / EminGT base).
+@name    RethinkingVoxels lights
+@target  RethinkingVoxels
 @irlite  1
 @marker  IRLITE
 
@@ -16,10 +15,9 @@
 // ---- options (exposed in the IRLite shader settings screen) ----
 #define IRLITE_DIFFUSE
 #define IRLITE_SPECULAR
-#define IRLITE_VOLUMETRIC                  // per-light volumetric beams/haze (deferred2 march + composite add)
+#define IRLITE_VOLUMETRIC                  // per-light volumetric beams/haze (reduced-res deferred2 pass)
 #define IRLITE_INTENSITY 1.0 // [0.1 0.25 0.5 0.75 1.0 1.5 2.0 3.0 4.0]
 #define IRLITE_SPECULAR_INTENSITY 1.0 // [0.0 0.25 0.5 0.75 1.0 1.5 2.0 3.0 4.0]
-#define IRLITE_SPECULAR_SMOOTHNESS 0.5 // [0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 0.95]
 
 #define IRLITE_SHADOWS                    // baked point/spot shadows (atlas + cube-array)
 #define IRLITE_SHADOW_QUALITY 2 // [0 1 2 3 4]
@@ -49,13 +47,13 @@
 
 #define IRLITE_VL_SHADOWS                  // per-step shadowing of the VL beams/haze; active only with IRLITE_SHADOWS on
 #define IRLITE_VL_SHADOW_STRIDE 1 // [1 2 3 4]
-#define IRLITE_VL_RESOLUTION 50 // [100 50 25]
+#define IRLITE_VL_RESOLUTION 0.5 // [1.0 0.5 0.25]
 #define IRLITE_VL_INTENSITY 1.0 // [0.1 0.25 0.5 0.75 1.0 1.5 2.0 3.0 4.0 6.0]
 #define IRLITE_VL_STEPS 48 // [8 12 14 16 24 32 48 64]
 #define IRLITE_VL_TIP_BOOST 1.5 // [0.0 0.5 1.0 1.5 2.0 3.0 4.0]
 #define IRLITE_VL_TIP_RADIUS 1.5 // [0.5 0.75 1.0 1.5 2.0 3.0 4.0]
 #define IRLITE_VL_MAX_DIST 96.0 // [32.0 64.0 96.0 128.0 192.0 256.0]
-#define IRLITE_VL_NOISE                    // animated 3D density noise - breaks the uniform beam into drifting puffs
+#define IRLITE_VL_NOISE                    // animated 3D density noise — breaks the uniform beam into drifting puffs
 #define IRLITE_VL_NOISE_AMOUNT 0.6 // [0.2 0.4 0.6 0.8 1.0]
 #define IRLITE_VL_NOISE_SCALE 2.0 // [0.5 1.0 1.5 2.0 3.0 4.0 6.0]
 #define IRLITE_VL_NOISE_SPEED 0.25 // [0.0 0.25 0.5 1.0 1.5 2.0 3.0]
@@ -65,7 +63,7 @@
 #define IRLITE_TOON_BANDS 3 // [2 3 4 5 6 8]
 #define IRLITE_TOON_SMOOTH 0.10 // [0.0 0.05 0.10 0.20 0.30 0.50]
 
-#define IRLITE_OUTLINE                     // backlight rim outline (depth-edge x Fresnel), from IRLEngine LocalLightOutline
+#define IRLITE_OUTLINE                    // backlight rim outline (depth-edge x Fresnel), from IRLEngine LocalLightOutline
 #define IRLITE_OUTLINE_TARGET 0 // [0 1 2]
 #define IRLITE_OUTLINE_PIXEL_SIZE 2 // [1 2 3 4 5 6]
 #define IRLITE_OUTLINE_STRENGTH 0.65 // [0.0 0.1 0.2 0.35 0.5 0.65 0.8 1.0 1.5 2.0 3.0]
@@ -77,14 +75,15 @@
 //#define IRLITE_OUTLINE_GLOW                   // soft inner Fresnel halo, feeds bloom (on/off)
 #define IRLITE_OUTLINE_GLOW_STRENGTH 0.12 // [0.0 0.05 0.12 0.2 0.35 0.5 0.75]
 
-// Gate the whole body (SSBO included) out of Voxy (VOXY_PATCH, the pack's own define) and the dh_* distant-LOD passes (IRLITE_SKIP, ours); the option defines above stay visible to Iris.
-#if !defined VOXY_PATCH && !defined IRLITE_SKIP
+// DH/Voxy LOD passes draw distant geometry only and lack the needed uniforms - gate the whole body out; the option defines above stay visible to Iris.
+#if !defined DH_TERRAIN && !defined DH_WATER && !defined VOXY_PATCH
     #define IRLITE_ACTIVE
 #endif
 
 #ifdef IRLITE_ACTIVE
 
-// ---- SSBO (binding 7) - byte-for-byte mirror of LightBuffer.java std430 ----
+// ---- SSBO (binding 7) — byte-for-byte mirror of LightBuffer.java std430 ----
+// In-file #extension is the pack's own SSBO idiom (lib/voxelization/SSBOs/blockDataBuffer.glsl) - works at #version 130.
 #extension GL_ARB_shader_storage_buffer_object : enable
 
 struct IrliteLight
@@ -108,8 +107,8 @@ layout(std430, binding = 7) buffer IrliteLights
 
 const float IRLITE_PI = 3.14159265;
 
-// Compile the shadow sampling block only for the passes that need it; the extra IRLITE_SHADOWS gate means turning shadows off also removes the samplerCubeArray declaration (driver escape hatch).
-#if defined IRLITE_SHADOWS && (defined IRLITE_SURFACE_PASS || (defined IRLITE_COMPOSITE_PASS && defined IRLITE_OUTLINE) || (defined IRLITE_VL_PASS && defined IRLITE_VOLUMETRIC && defined IRLITE_VL_SHADOWS))
+// Master-gated on IRLITE_SHADOWS so disabling shadows also removes the samplerCubeArray declaration - the one construct a strict #version 130 driver could reject.
+#if defined IRLITE_SHADOWS && (defined IRLITE_SURFACE_PASS || (defined COMPOSITE && defined IRLITE_OUTLINE) || (defined IRLITE_VL_PASS && defined IRLITE_VOLUMETRIC && defined IRLITE_VL_SHADOWS))
     #define IRLITE_COMPILE_SHADOWS
 #endif
 
@@ -159,13 +158,14 @@ float irlite_cookie(vec3 fragWorld, IrliteLight light)
 }
 #endif // IRLITE_COMPILE_COOKIE
 
-// ==== SHADOW SAMPLING - shared by the surface, outline and VL passes ====
+// ==== SHADOW SAMPLING - shared by the surface passes and the deferred2 VL pass ====
 #ifdef IRLITE_COMPILE_SHADOWS
 
+// samplerCubeArray/sampler2DArray/textureGather/findMSB are GL4 features - pulled in by in-file #extension like the SSBO (the pack is #version 130).
 #extension GL_ARB_texture_cube_map_array : enable
 #extension GL_ARB_texture_gather : enable
 #extension GL_EXT_texture_array : enable    // sampler2DArray: point min/max pyramid (irl_pointShadowPyramid)
-#extension GL_ARB_gpu_shader5 : enable       // findMSB() + textureGather(cubeArray, comp) — core at Photon's #version, needs the extension on the older-GLSL packs
+#extension GL_ARB_gpu_shader5 : enable       // findMSB() + textureGather(cubeArray, comp) — core at Photon's #version, not at 130
 
 // ---- baked shadow samplers, bound by the mod by exact name; tile/layer = int(vlParams.w + 0.5), -1 = no baked map ----
 uniform sampler2D        irl_spotShadowAtlas;    // 4x4 atlas of perspective depth tiles, one per spot
@@ -789,21 +789,22 @@ float irlite_pointShadow(vec3 fragWorld, vec3 normal, IrliteLight light, bool fa
 
 // ---- outline (IRLITE_COMPOSITE_PASS) ----
 // (bare ifdef — registers IRLITE_OUTLINE with Iris; if-defined refs are not counted)
-#ifdef IRLITE_COMPOSITE_PASS
+#ifdef COMPOSITE
 #ifdef IRLITE_OUTLINE
 
-// Host composite.glsl declares near/far, viewWidth/viewHeight, depthtex0 and cameraPosition - do not re-declare.
-
-// Metric view-space depth (metres) at a gbuffer texel, clamped to screen. far * the pack's chocapic ld(d).
+// Actual view-space depth (metres) at a texel via gbufferProjectionInverse.
 float irlite_outlineDepth(ivec2 t)
 {
-    ivec2 tMax = ivec2(vec2(viewWidth, viewHeight)) - ivec2(1);
+    ivec2 tMax = ivec2(viewWidth, viewHeight) - ivec2(1);
     t = clamp(t, ivec2(0), tMax);
-    float d = texelFetch(depthtex0, t, 0).r;
-    return (2.0 * near * far) / (far + near - d * (far - near));
+    float raw = texelFetch(depthtex0, t, 0).r;
+    vec2 uv = (vec2(t) + 0.5) / vec2(viewWidth, viewHeight);
+    vec4 ndcPos = vec4(uv * 2.0 - 1.0, raw * 2.0 - 1.0, 1.0);
+    vec4 viewPos = gbufferProjectionInverse * ndcPos;
+    return abs(viewPos.z / viewPos.w);
 }
 
-// 4-corner depth-edge detector at +-PIXEL_SIZE: maxBehind x edgeness, smoothstepped.
+// 4-corner depth-edge detector at ±PIXEL_SIZE: maxBehind × edgeness, smoothstepped.
 float irlite_outlineFactor()
 {
     int ps = IRLITE_OUTLINE_PIXEL_SIZE;
@@ -877,15 +878,14 @@ vec3 irlite_outlineInk(vec3 playerPos, vec3 flatNormal)
             #endif
         }
 
-        #ifdef IRLITE_SHADOWS
-            // rim ink only needs coarse occlusion: fast=true (1 tap) — the full PCSS already runs in the surface pass
+        #ifdef IRLITE_COMPILE_SHADOWS
             attenuation *= (light.dirType.w > 0.5)
-                ? irlite_spotShadow(fragWorld, n, light, true)
-                : irlite_pointShadow(fragWorld, n, light, true);
+                ? irlite_spotShadow(fragWorld, n, light, false)
+                : irlite_pointShadow(fragWorld, n, light, false);
         #endif
 
-        // RAW LINEAR ink colour (the hook adds in linear space).
-        vec3 lightCol = max(light.colorIntensity.rgb, vec3(0.0)) * light.colorIntensity.a;
+        vec3 lightCol = pow(max(light.colorIntensity.rgb, vec3(0.0)), vec3(1.0 / 2.2))
+                      * light.colorIntensity.a;
         float rim = IRLITE_OUTLINE_BACK * (1.0 - ndl);
         #ifdef IRLITE_OUTLINE_FRONT
             rim += IRLITE_OUTLINE_FRONT_STRENGTH * ndl;
@@ -897,7 +897,7 @@ vec3 irlite_outlineInk(vec3 playerPos, vec3 flatNormal)
 }
 
 #endif // IRLITE_OUTLINE
-#endif // IRLITE_COMPOSITE_PASS (outline half)
+#endif // COMPOSITE (outline half)
 
 // ---- surface (IRLITE_SURFACE_PASS) ----
 #ifdef IRLITE_SURFACE_PASS
@@ -919,53 +919,8 @@ float irlite_toon(float x)
     #endif
 }
 
-#ifdef IRLITE_SPECULAR
-// Self-contained world-space GGX (irlite_-prefixed to avoid redefinition).
-float irlite_ggxDistr(float NoHsqr, float roughness)
-{
-    float roughnessSqr = roughness * roughness;
-    float distr = NoHsqr * (roughnessSqr - 1.0) + 1.0;
-    return roughnessSqr / (3.14159 * distr * distr);
-}
-
-float irlite_smithGGX(float NoL, float NoV, float roughness)
-{
-    float k = roughness * 0.5;
-    float smithL = 0.5 / (NoL * (1.0 - k) + k);
-    float smithV = 0.5 / (NoV * (1.0 - k) + k);
-    return smithL * smithV;
-}
-
-float irlite_sgFresnel(float HoL, float f0)
-{
-    float fresnel = exp2(((-5.55473 * HoL) - 6.98316) * HoL);
-    return fresnel * (1.0 - f0) + f0;
-}
-
-// N, V, L world-space unit vectors; smoothness from IRLITE_SPECULAR_SMOOTHNESS.
-float irlite_specGGX(vec3 N, vec3 V, vec3 L)
-{
-    float roughness = max(1.0 - IRLITE_SPECULAR_SMOOTHNESS, 0.025);
-    roughness *= roughness;
-
-    vec3 halfVec = normalize(L + V);
-    float HoL = clamp(dot(halfVec, L), 0.0, 1.0);
-    float NoL = clamp(dot(N, L), 0.0, 1.0);
-    float NoV = clamp(dot(N, V), 0.0, 1.0);
-    float NoH = clamp(dot(N, halfVec), 0.0, 1.0);
-
-    float D = irlite_ggxDistr(NoH * NoH, roughness);
-    float F = irlite_sgFresnel(HoL, 0.04);
-    float G = irlite_smithGGX(max(NoL, 1e-4), max(NoV, 1e-4), roughness);
-
-    float specular = D * F * G;
-    // Soft clamp: keeps the lobe from blowing up at grazing angles.
-    return specular / (1.0 + 0.0078125 * specular) * NoL;
-}
-#endif // IRLITE_SPECULAR
-
 // Diffuse + specular in one SSBO pass; per-light geometry + shadow computed once.
-void irlite_lightSurface(vec3 playerPos, vec3 normalV, vec3 viewPos,
+void irlite_lightSurface(vec3 playerPos, vec3 normalM, vec3 nViewPos, float smoothnessG,
                          bool nonTerrain, out vec3 diffuseOut, out vec3 specularOut)
 {
     diffuseOut = vec3(0.0);
@@ -973,16 +928,8 @@ void irlite_lightSurface(vec3 playerPos, vec3 normalV, vec3 viewPos,
 
     vec3 fragWorld = playerPos + cameraPosition;
     mat3 viewToWorld = mat3(gbufferModelViewInverse);
-
-    // gbuffers_hand passes normal = vec3(0.0): light it by falloff alone
-    // (ndl = 1) and skip the normal-dependent terms.
-    float n2 = dot(normalV, normalV);
-    bool hasNormal = n2 > 0.25;
-    vec3 n = hasNormal ? normalize(viewToWorld * normalV) : vec3(0.0);
-
-    #ifdef IRLITE_SPECULAR
-        vec3 V = -normalize(playerPos);   // world-oriented fragment -> camera
-    #endif
+    mat3 worldToView = mat3(gbufferModelView);
+    vec3 n = normalize(viewToWorld * normalM);
 
     uint count = irlite_lightCount;
     for (uint i = 0u; i < count; i++)
@@ -999,7 +946,7 @@ void irlite_lightSurface(vec3 playerPos, vec3 normalV, vec3 viewPos,
         float dist = sqrt(dist2);
 
         vec3 L = toLight / dist;
-        float ndl = hasNormal ? max(dot(n, L), 0.0) : 1.0;
+        float ndl = max(dot(n, L), 0.0);
 
         // Frostbite radial window (1-(d/r)^4)^2.
         float dr = dist / radius;
@@ -1023,29 +970,33 @@ void irlite_lightSurface(vec3 playerPos, vec3 normalV, vec3 viewPos,
         #ifdef IRLITE_SHADOWS
             // ONE shadow visibility shared by diffuse + specular.
             #ifdef IRLITE_SHADOW_LOD
-                // a contribution too dim to show penumbra detail takes the 1-tap fast path
-                // (no per-surface roughness in scope here — BSL folds specular into irlite_specGGX — so no glossy-highlight exception)
-                bool irlShFast = attenuation * light.colorIntensity.a < IRLITE_SHADOW_LOD_THRESHOLD;
+                // a contribution too dim to show penumbra detail takes the 1-tap fast path;
+                // glossy surfaces keep the full path — a dim light can still throw a bright GGX highlight
+                bool irlShFast = attenuation * light.colorIntensity.a < IRLITE_SHADOW_LOD_THRESHOLD
+                              && smoothnessG < 0.7;   // CR has no Material struct; smoothnessG<0.7 ~ Photon roughness>0.3
             #else
                 bool irlShFast = false;
             #endif
             attenuation *= (light.dirType.w > 0.5)
-                ? irlite_spotShadow(fragWorld, hasNormal ? n : L, light, irlShFast)
-                : irlite_pointShadow(fragWorld, hasNormal ? n : L, light, irlShFast);
+                ? irlite_spotShadow(fragWorld, n, light, irlShFast)
+                : irlite_pointShadow(fragWorld, n, light, irlShFast);
             if (attenuation <= 0.0) continue;
         #endif
 
         // RAW LINEAR colour.
-        vec3 lightCol = max(light.colorIntensity.rgb, vec3(0.0)) * light.colorIntensity.a;
+        vec3 lightCol = pow(max(light.colorIntensity.rgb, vec3(0.0)), vec3(1.0 / 2.2))
+                      * light.colorIntensity.a;
 
         float diffuse = irlite_toon(attenuation * ndl);
         diffuseOut += lightCol * diffuse;
 
         #ifdef IRLITE_SPECULAR
-            // Specular on non-terrain only (terrain has no material smoothness data).
-            if (ndl > 0.0 && hasNormal && nonTerrain)
+            if (ndl > 0.0)
             {
-                specularOut += irlite_specGGX(n, V, L) * lightCol * attenuation;
+                // Specular on non-terrain only (terrain has no material smoothness data).
+                vec3 Lview = normalize(worldToView * L);
+                float ndlV = max(dot(normalM, Lview), 0.0);
+                specularOut += GGX(normalM, nViewPos, Lview, ndlV, smoothnessG) * lightCol * attenuation;
             }
         #endif
     }
@@ -1071,7 +1022,7 @@ float irlite_phaseHG(float cosTheta, float g)
 }
 
 #ifdef IRLITE_VL_NOISE
-// Pseudo-3D value noise from noisetex z-slices; .b = the pack's per-texel white-noise channel (512px, texel = SCALE blocks).
+// Pseudo-3D value noise from noisetex z-slices (the fork's Noise3D lives out of deferred2 scope, so it is inlined); ~[0,1], mean ~0.5.
 float irlite_noise3D(vec3 p)
 {
     p.z = fract(p.z) * 128.0;
@@ -1079,8 +1030,8 @@ float irlite_noise3D(vec3 p)
     float fz = p.z - iz;
     vec2 offA = vec2(23.0, 29.0) * iz / 128.0;
     vec2 offB = vec2(23.0, 29.0) * (iz + 1.0) / 128.0;
-    float a = texture2D(noisetex, p.xy + offA).b;
-    float b = texture2D(noisetex, p.xy + offB).b;
+    float a = texture2DLod(noisetex, p.xy + offA, 0.0).r;
+    float b = texture2DLod(noisetex, p.xy + offB, 0.0).r;
     return mix(a, b, fz);
 }
 
@@ -1089,7 +1040,7 @@ float irlite_vlNoise(vec3 worldP, float w2)
 {
     // wind in WHOLE field periods per frameTimeCounter wrap (3600 s): SPEED slider is a multiple of 0.25 and the period vectors of 4, so the hourly reset lands seamlessly.
     vec3 wind = frameTimeCounter * (IRLITE_VL_NOISE_SPEED / 3600.0) * vec3(12.0, 4.0, 8.0);
-    vec3 p = worldP / (512.0 * IRLITE_VL_NOISE_SCALE);
+    vec3 p = worldP / (128.0 * IRLITE_VL_NOISE_SCALE);
     return (1.0 - w2) * irlite_noise3D(p + wind)
          + w2 * irlite_noise3D(p * 2.53 + wind * 2.0 + vec3(0.31, 0.53, 0.47));
 }
@@ -1401,384 +1352,295 @@ vec3 irlite_volumetric(vec3 startWorld, vec3 endWorld, vec3 worldDir, float dith
 #endif // IRLITE_VL_PASS (volumetric half)
 
 // ---- composite upsample (IRLITE_COMPOSITE_PASS) ----
-#ifdef IRLITE_COMPOSITE_PASS
+#ifdef COMPOSITE
 #ifdef IRLITE_VOLUMETRIC
-uniform sampler2D colortex10;
+uniform sampler2D colortex15;
 #endif
 #endif
 
 #endif // IRLITE_ACTIVE
 
 #endif // INCLUDE_IRLITE_LIGHTS
+
 >>>
 
-# --- the added reduced-resolution volumetric pass ---
+# --- the added reduced-resolution volumetric pass (writes colortex15) ---
 +file shaders/program/deferred2.glsl
 <<<
-/*
-BSL Shaders v10 Series by Capt Tatsu
-https://capttatsu.com
+/////////////////////////////////////
+// Complementary Shaders by EminGT //
+/////////////////////////////////////
 
-deferred2 — ADDED BY THE IRLITE INJECT (not part of pristine BSL).
+/*
+deferred2 — ADDED BY THE IRLITE INJECT (not part of pristine Complementary).
 Marches the IRLite per-light volumetrics at REDUCED RESOLUTION: this program
 writes ONLY colortex10, which shaders.properties sizes at a fraction of the
-screen (size.buffer.colortex10, driven by the IRLITE_VL_RESOLUTION option).
-The pass viewport shrinks with its only render target, so every covered
-pixel's ray march costs a quarter (Half) or a sixteenth (Quarter) of the
-full-res price — the same mechanism Photon uses for its quarter-res fog
-pass. program/composite.glsl then bilinear-upsamples the buffer, applies the
-underwater/lava parity and adds it to color.
-Runs at the deferred stage (after solid gbuffers): depthtex0 holds the
-OPAQUE depth there, which is exactly the march end the inject always used
-(beams deliberately continue behind translucents/BBS replay models).
+screen (size.buffer.colortex10 = IRLITE_VL_RESOLUTION, the pack's own
+REFLECTION_RES mechanism). The pass viewport shrinks with its only render
+target, so every covered pixel's ray march costs a quarter (Half) or a
+sixteenth (Quarter) of the full-res price — the same mechanism Photon uses
+for its quarter-res fog pass. program/composite1.glsl then bilinear-upsamples
+the buffer, applies the underwater/lava parity and adds it to color.
+Runs at the deferred stage (after solid gbuffers): depthtex0 holds the OPAQUE
+depth there, which is exactly the march end the composite1-hosted march used
+(z1) — beams deliberately continue behind translucents/BBS replay models.
 The whole pass is program-toggled off when IRLITE_VOLUMETRIC is disabled
 (program.world*\/deferred2.enabled in shaders.properties).
 */
 
-//Settings//
-#include "/lib/settings.glsl"
+//Common//
+#include "/lib/common.glsl"
 
-//Fragment Shader///////////////////////////////////////////////////////////////////////////////////
-#ifdef FSH
+//////////Fragment Shader//////////Fragment Shader//////////Fragment Shader//////////
+#ifdef FRAGMENT_SHADER
 
-//Varyings//
-varying vec2 texCoord;
+noperspective in vec2 texCoord;
 
-//Uniforms//
-uniform int frameCounter;
-uniform float frameTimeCounter;
+//Pipeline Constants//
 
-uniform vec3 cameraPosition;
+//Common Variables//
+vec2 view = vec2(viewWidth, viewHeight);
 
-uniform mat4 gbufferProjectionInverse;
-uniform mat4 gbufferModelViewInverse;
-
-uniform sampler2D depthtex0;
-uniform sampler2D noisetex;
+//Common Functions//
 
 //Includes//
-#include "/lib/util/dither.glsl"
+#include "/lib/util/spaceConversion.glsl"
 
 #define IRLITE_VL_PASS
 #include "/lib/irlite/irlite_lights.glsl"
 
 //Program//
 void main() {
-	vec3 irliteVL = vec3(0.0);
+    vec3 irliteVL = vec3(0.0);
 
-	#if defined IRLITE_ACTIVE && defined IRLITE_VOLUMETRIC
-	float z = texture2D(depthtex0, texCoord).r;   // opaque depth (translucents are not drawn yet)
+    #if defined IRLITE_ACTIVE && defined IRLITE_VOLUMETRIC
+        // NOT texelFetch: gl_FragCoord lives in the REDUCED viewport while
+        // depthtex0 stays full-res — normalized texCoord maps correctly.
+        float z0 = texture2D(depthtex0, texCoord).r;   // opaque depth (translucents are not drawn yet)
 
-	vec3 ndcPos = vec3(texCoord, z) * 2.0 - 1.0;
-	vec4 viewPos = gbufferProjectionInverse * vec4(ndcPos, 1.0);
-	viewPos /= viewPos.w;
-	vec3 playerPos = mat3(gbufferModelViewInverse) * viewPos.xyz + gbufferModelViewInverse[3].xyz;
+        vec3 viewPos = ScreenToView(vec3(texCoord, z0));
+        vec3 playerPos = ViewToPlayer(viewPos);
 
-	float dither = Bayer8(gl_FragCoord.xy);
-	#ifdef TAA
-	dither = fract(dither + float(frameCounter % 8) * 0.125);
-	#endif
+        float dither = texture2DLod(noisetex, texCoord * view / 128.0, 0.0).b;
+        #ifdef TAA
+            dither = fract(dither + goldenRatio * mod(float(frameCounter), 3600.0));
+        #endif
 
-	irliteVL = irlite_volumetric(cameraPosition, cameraPosition + playerPos,
-	                             normalize(playerPos), dither);
-	#endif
+        irliteVL = irlite_volumetric(cameraPosition, cameraPosition + playerPos,
+                                     normalize(playerPos), dither);
+    #endif
 
-	/* RENDERTARGETS: 10 */
-	gl_FragData[0] = vec4(irliteVL, 1.0);
+    /* RENDERTARGETS: 15 */
+    gl_FragData[0] = vec4(irliteVL, 1.0);
 }
 
 #endif
 
-//Vertex Shader/////////////////////////////////////////////////////////////////////////////////////
-#ifdef VSH
+//////////Vertex Shader//////////Vertex Shader//////////Vertex Shader//////////
+#ifdef VERTEX_SHADER
 
-//Varyings//
-varying vec2 texCoord;
+noperspective out vec2 texCoord;
+
+//Attributes//
+
+//Common Variables//
+
+//Common Functions//
+
+//Includes//
 
 //Program//
 void main() {
-	texCoord = gl_MultiTexCoord0.xy;
+    gl_Position = ftransform();
 
-	gl_Position = ftransform();
+    texCoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
 }
 
 #endif
+
 >>>
 +file shaders/world0/deferred2.fsh
 <<<
-/*
-BSL Shaders v10 Series by Capt Tatsu
-https://capttatsu.com
+#version 130
 
-(deferred2 added by the IRLite inject — reduced-res volumetric pass)
-*/
-
-#version 120
-
+#define FRAGMENT_SHADER
 #define OVERWORLD
-#define FSH
+#define DEFERRED2
 
 #include "/program/deferred2.glsl"
 >>>
 +file shaders/world0/deferred2.vsh
 <<<
-/*
-BSL Shaders v10 Series by Capt Tatsu
-https://capttatsu.com
+#version 130
 
-(deferred2 added by the IRLite inject — reduced-res volumetric pass)
-*/
-
-#version 120
-
+#define VERTEX_SHADER
 #define OVERWORLD
-#define VSH
+#define DEFERRED2
 
 #include "/program/deferred2.glsl"
 >>>
 +file shaders/world1/deferred2.fsh
 <<<
-/*
-BSL Shaders v10 Series by Capt Tatsu
-https://capttatsu.com
+#version 130
 
-(deferred2 added by the IRLite inject — reduced-res volumetric pass)
-*/
-
-#version 120
-
+#define FRAGMENT_SHADER
 #define END
-#define FSH
+#define DEFERRED2
 
 #include "/program/deferred2.glsl"
 >>>
 +file shaders/world1/deferred2.vsh
 <<<
-/*
-BSL Shaders v10 Series by Capt Tatsu
-https://capttatsu.com
+#version 130
 
-(deferred2 added by the IRLite inject — reduced-res volumetric pass)
-*/
-
-#version 120
-
+#define VERTEX_SHADER
 #define END
-#define VSH
+#define DEFERRED2
 
 #include "/program/deferred2.glsl"
 >>>
 +file shaders/world-1/deferred2.fsh
 <<<
-/*
-BSL Shaders v10 Series by Capt Tatsu
-https://capttatsu.com
+#version 130
 
-(deferred2 added by the IRLite inject — reduced-res volumetric pass)
-*/
-
-#version 120
-
+#define FRAGMENT_SHADER
 #define NETHER
-#define FSH
+#define DEFERRED2
 
 #include "/program/deferred2.glsl"
 >>>
 +file shaders/world-1/deferred2.vsh
 <<<
-/*
-BSL Shaders v10 Series by Capt Tatsu
-https://capttatsu.com
+#version 130
 
-(deferred2 added by the IRLite inject — reduced-res volumetric pass)
-*/
-
-#version 120
-
+#define VERTEX_SHADER
 #define NETHER
-#define VSH
+#define DEFERRED2
 
 #include "/program/deferred2.glsl"
 >>>
 
-# --- forward diffuse + specular in GetLighting ---
-@file shaders/lib/lighting/forwardLighting.glsl
-before "void GetLighting(inout vec3 albedo, out vec3 shadow, vec3 viewPos, vec3 worldPos, vec3 normal,"
+# --- forward diffuse + specular in DoLighting (anchors identical to Complementary) ---
+@file shaders/lib/lighting/mainLighting.glsl
+after "#include \"/lib/lighting/ggx.glsl\""
 <<<
 #define IRLITE_SURFACE_PASS
 #include "/lib/irlite/irlite_lights.glsl"
-
 >>>
-before "    albedo *= max(sceneLighting + blockLighting + emissiveLighting + nightVisionLighting + minLighting, vec3(0.0));"
-<<<
-    #if defined IRLITE_ACTIVE && (defined IRLITE_DIFFUSE || defined IRLITE_SPECULAR)
-    // IRLite lights: added after vanilla multiply; entity flag compile-time.
-    #ifdef IRLITE_NONTERRAIN
-    bool irliteNonTerrain = true;
-    #else
-    bool irliteNonTerrain = false;
-    #endif
-    vec3 irliteDiffuse, irliteSpecular;
-    irlite_lightSurface(worldPos, normal, viewPos, irliteNonTerrain, irliteDiffuse, irliteSpecular);
-    vec3 irliteAlbedo = albedo;
-    #endif
-
->>>
-after "    albedo *= vanillaDiffuse * smoothLighting * smoothLighting;"
+after "    finalDiffuse = sqrt(max(finalDiffuse, vec3(0.0))); // sqrt() for a bit more realistic light mix, max() to prevent NaNs"
 <<<
 
     #if defined IRLITE_ACTIVE && (defined IRLITE_DIFFUSE || defined IRLITE_SPECULAR)
-    // (bare #ifdef per toggle — Iris only registers a boolean option as
-    // user-configurable when its name appears in a bare #ifdef/#ifndef)
-    #ifdef IRLITE_DIFFUSE
-    albedo += irliteAlbedo * (IRLITE_INTENSITY * irliteDiffuse);
+        // IRLite point/spot lights; entity flag is compile-time.
+        #if defined GBUFFERS_ENTITIES || defined GBUFFERS_BLOCK || defined GBUFFERS_HAND
+            bool irliteNonTerrain = true;
+        #else
+            bool irliteNonTerrain = false;
+        #endif
+        vec3 irliteDiffuse, irliteSpecular;
+        irlite_lightSurface(playerPos, normalM, nViewPos, smoothnessG, irliteNonTerrain, irliteDiffuse, irliteSpecular);
+        #ifdef IRLITE_DIFFUSE
+            finalDiffuse += IRLITE_INTENSITY * irliteDiffuse;
+        #endif
     #endif
-    #ifdef IRLITE_SPECULAR
-    albedo += (IRLITE_INTENSITY * IRLITE_SPECULAR_INTENSITY) * irliteSpecular;
-    #endif
+>>>
+after "    color.rgb += lightHighlight;"
+<<<
+    #if defined IRLITE_ACTIVE && defined IRLITE_SPECULAR
+        color.rgb += (IRLITE_INTENSITY * IRLITE_SPECULAR_INTENSITY) * irliteSpecular;
     #endif
 >>>
 
-# --- per-program flags: entity/hand/block lightMask gate + distant-LOD skip ---
-@file shaders/program/gbuffers_entities.glsl
-after "#ifdef FSH"
-<<<
-#define IRLITE_NONTERRAIN // IRLite: entity/hand/block program (lightMask gate)
->>>
-replace "/* DRAWBUFFERS:01 */"
-<<<
-/* DRAWBUFFERS:013 */
->>>
-after "    gl_FragData[1] = vec4(vlAlbedo, 1.0);"
-<<<
-    gl_FragData[2] = vec4(0.0, 0.0, entityMask, 1.0); // colortex3.z: IRLite entity flag for outline target (MCBL/PBR branches below re-pin their own layout)
->>>
-@file shaders/program/gbuffers_entities_glowing.glsl
-after "#ifdef FSH"
-<<<
-#define IRLITE_NONTERRAIN // IRLite: entity/hand/block program (lightMask gate)
->>>
-@file shaders/program/gbuffers_hand.glsl
-after "#ifdef FSH"
-<<<
-#define IRLITE_NONTERRAIN // IRLite: entity/hand/block program (lightMask gate)
->>>
-@file shaders/program/gbuffers_block.glsl
-after "#ifdef FSH"
-<<<
-#define IRLITE_NONTERRAIN // IRLite: entity/hand/block program (lightMask gate)
->>>
-@file shaders/program/dh_terrain.glsl
-after "#ifdef FSH"
-<<<
-#define IRLITE_SKIP // IRLite: distant-LOD pass, IRLite lights stay out (see lib/irlite)
->>>
-@file shaders/program/dh_water.glsl
-after "#ifdef FSH"
-<<<
-#define IRLITE_SKIP // IRLite: distant-LOD pass, IRLite lights stay out (see lib/irlite)
->>>
-
-# --- rim outline + volumetric upsample in composite ---
+# --- rim outline (before pow 2.2, gamma) + volumetric upsample (after pow 2.2, linear) ---
 @file shaders/program/composite.glsl
-after "uniform sampler2D colortex1;"
-<<<
-uniform sampler2D colortex3;
->>>
-after "#include \"/lib/atmospherics/waterFog.glsl\""
+after "#include \"/lib/atmospherics/fog/caveFactor.glsl\""
 <<<
 
-#define IRLITE_COMPOSITE_PASS
 #include "/lib/irlite/irlite_lights.glsl"
 >>>
-after "vec3 reflectionColor = pow(color.rgb, vec3(0.125)) * 0.5;"
+before "    color = pow(color, vec3(2.2));"
+<<<
+    #if defined IRLITE_ACTIVE && defined IRLITE_OUTLINE
+        // IRLite backlight rim outline; post-translucent, before pow-2.2 (gamma-space ink). IRLITE_OUTLINE_TARGET gates by gbuffer materialMask: entities = PBR 100..199 or default 254, blocks = 0..99.
+        bool irliteODraw = z0 < 1.0 && z0 > 0.56;
+        #if IRLITE_OUTLINE_TARGET != 0
+            if (irliteODraw) {
+                float irliteOMat = texelFetch(colortex6, texelCoord, 0).g * 255.0;
+                bool irliteOEntity = (irliteOMat > 99.5 && irliteOMat < 199.5) || irliteOMat > 253.5;
+                #if IRLITE_OUTLINE_TARGET == 1
+                    irliteODraw = irliteOEntity;
+                #else
+                    irliteODraw = !irliteOEntity;
+                #endif
+            }
+        #endif
+        if (irliteODraw) {
+            vec3 irliteOPlayerPos = mat3(gbufferModelViewInverse) * viewPos.xyz + gbufferModelViewInverse[3].xyz;
+            vec3 irliteFlatN = cross(dFdx(irliteOPlayerPos), dFdy(irliteOPlayerPos));
+            if (dot(irliteFlatN, irliteOPlayerPos) > 0.0) irliteFlatN = -irliteFlatN;
+            color += IRLITE_INTENSITY * irlite_outlineInk(irliteOPlayerPos, irliteFlatN);
+        }
+    #endif
+
+>>>
+after "    color = pow(color, vec3(2.2));"
 <<<
 
-	#if defined IRLITE_ACTIVE && defined IRLITE_OUTLINE
-	// IRLite backlight rim outline: flat normal from screen-space depth derivatives; z0 gate skips sky + hand.
-	vec3 irliteOPlayerPos = ToWorld(viewPos.xyz);
-	vec3 irliteONormal = cross(dFdx(irliteOPlayerPos), dFdy(irliteOPlayerPos));
-	if (z0 < 1.0 && z0 > 0.56)
-	{
-		bool irliteODraw = true;
-		#if IRLITE_OUTLINE_TARGET != 0
-			float irliteOMat = texture2D(colortex3, texCoord).z; // BSL: entities tagged 0.25 in colortex3.z (gbuffers_entities); blocks/clear = 0.0
-			bool irliteOEntity = irliteOMat > 0.1;
-			#if IRLITE_OUTLINE_TARGET == 1
-				irliteODraw = irliteOEntity;
-			#else
-				irliteODraw = !irliteOEntity;
-			#endif
-		#endif
-		if (irliteODraw) {
-			if (dot(irliteONormal, irliteOPlayerPos) > 0.0) irliteONormal = -irliteONormal;
-			color.rgb += IRLITE_INTENSITY * irlite_outlineInk(irliteOPlayerPos, irliteONormal);
-		}
-	}
-	#endif
-
-	#if defined IRLITE_ACTIVE && defined IRLITE_VOLUMETRIC
-	// IRLite VL: bilinear upsample from reduced-res colortex10; water/lava-dimmed and added.
-	vec3 irliteVL = texture2D(colortex10, texCoord).rgb;
-	if (isEyeInWater == 1) irliteVL *= pow(vec3(0.80, 0.87, 0.97) * 0.55, vec3(2.0));
-	else if (isEyeInWater == 2) irliteVL = vec3(0.0);
-	color.rgb += irliteVL;
-	#endif
+    #if defined IRLITE_ACTIVE && defined IRLITE_VOLUMETRIC
+        // IRLite VL: reduced-res deferred2 -> colortex15, bilinear-upsampled here in LINEAR space.
+        vec3 irliteVL = texture2D(colortex15, texCoord).rgb;
+        if (isEyeInWater == 1) {
+            vec3 irliteUWM = vec3(0.80, 0.87, 0.97) * 0.55;
+            irliteVL *= irliteUWM * irliteUWM;
+        } else if (isEyeInWater == 2) {
+            irliteVL = vec3(0.0);
+        }
+        color += irliteVL;
+    #endif
 >>>
 
 # --- the reduced-res VL buffer format (the pack declares formats inside this comment block) ---
-@file shaders/program/final.glsl
-after "const int colortex9Format = RGB16F; //colored light"
+@file shaders/lib/pipelineSettings.glsl
+after "const int colortex14Format= RGBA16F;        //specular lighting"
 <<<
-const int colortex10Format = RGB16F; //IRLite reduced-res volumetric light (deferred2)
+const int colortex15Format= RGBA16F;        //IRLite reduced-res volumetric (added deferred2 pass)
 >>>
 
-# --- SSBO feature flag, deferred2 toggle + buffer size, settings screens + sliders ---
+# --- deferred2 program toggle + buffer size, settings screens + sliders ---
 @file shaders/shaders.properties
-replace "iris.features.optional=CUSTOM_IMAGES FADE_VARIABLE"
+before "# Miscellaneous"
 <<<
-iris.features.optional=CUSTOM_IMAGES FADE_VARIABLE SSBO
->>>
-before "#Multi-Colored Blocklight Prerequisites"
-<<<
-#IRLite reduced-resolution volumetric pass (added deferred2 -> colortex10)
-program.world0/deferred2.enabled=IRLITE_VOLUMETRIC
-program.world1/deferred2.enabled=IRLITE_VOLUMETRIC
-program.world-1/deferred2.enabled=IRLITE_VOLUMETRIC
-#if IRLITE_VL_RESOLUTION == 100
-size.buffer.colortex10=1.0 1.0
-#elif IRLITE_VL_RESOLUTION == 50
-size.buffer.colortex10=0.5 0.5
-#elif IRLITE_VL_RESOLUTION == 25
-size.buffer.colortex10=0.25 0.25
-#endif
+# IRLite reduced-resolution volumetric pass (added deferred2 -> colortex15)
+    program.world0/deferred2.enabled=IRLITE_VOLUMETRIC
+    program.world-1/deferred2.enabled=IRLITE_VOLUMETRIC
+    program.world1/deferred2.enabled=IRLITE_VOLUMETRIC
+    size.buffer.colortex15 = IRLITE_VL_RESOLUTION IRLITE_VL_RESOLUTION
 
 >>>
-replace "DYNAMIC_HANDLIGHT HALF_LAMBERT"
+replace "VANILLAAO_I PLAYER_SHADOW"
 <<<
-DYNAMIC_HANDLIGHT HALF_LAMBERT [IRLIGHTS]
+VANILLAAO_I PLAYER_SHADOW [IRLIGHTS]
 >>>
-after "screen.AO=<empty> <empty> AO_METHOD <empty> <empty> <empty> AO_STRENGTH ambientOcclusionLevel"
+after "        screen.PIXELATED_LIGHTING_SETTINGS=<empty> <empty> PIXELATED_SHADOWS PIXELATED_BLOCKLIGHT PIXELATED_AO PIXEL_SCALE TEXTURE_RES"
 <<<
-
-screen.IRLIGHTS=IRLITE_DIFFUSE IRLITE_INTENSITY <empty> <empty> [IRLIGHTS_SPECULAR] [IRLIGHTS_SHADOWS] [IRLIGHTS_TOON] [IRLIGHTS_VOLUMETRIC] [IRLIGHTS_OUTLINE] <empty>
-screen.IRLIGHTS_SPECULAR=IRLITE_SPECULAR <empty> IRLITE_SPECULAR_INTENSITY IRLITE_SPECULAR_SMOOTHNESS
-screen.IRLIGHTS_SHADOWS=IRLITE_SHADOWS IRLITE_SHADOW_QUALITY <empty> <empty> IRLITE_SHADOW_SIZE IRLITE_SHADOW_BIAS IRLITE_SHADOW_NORMAL_OFFSET <empty>
-screen.IRLIGHTS_TOON=IRLITE_TOON <empty> IRLITE_TOON_BANDS IRLITE_TOON_SMOOTH
-screen.IRLIGHTS_VOLUMETRIC=IRLITE_VOLUMETRIC IRLITE_VL_INTENSITY IRLITE_VL_RESOLUTION IRLITE_VL_STEPS IRLITE_VL_MAX_DIST <empty> <empty> <empty> IRLITE_VL_SHADOWS IRLITE_VL_SHADOW_STRIDE IRLITE_VL_TIP_BOOST IRLITE_VL_TIP_RADIUS <empty> <empty> IRLITE_VL_NOISE IRLITE_VL_NOISE_AMOUNT IRLITE_VL_NOISE_SCALE IRLITE_VL_NOISE_SPEED IRLITE_VL_NOISE_STRIDE <empty>
-screen.IRLIGHTS_OUTLINE=IRLITE_OUTLINE IRLITE_OUTLINE_TARGET <empty> <empty> IRLITE_OUTLINE_STRENGTH IRLITE_OUTLINE_PIXEL_SIZE IRLITE_OUTLINE_FRESNEL_POWER <empty> <empty> <empty> IRLITE_OUTLINE_BACK <empty> IRLITE_OUTLINE_FRONT IRLITE_OUTLINE_FRONT_STRENGTH IRLITE_OUTLINE_GLOW IRLITE_OUTLINE_GLOW_STRENGTH
+        screen.IRLIGHTS=IRLITE_DIFFUSE IRLITE_INTENSITY <empty> <empty> [IRLIGHTS_SPECULAR] [IRLIGHTS_SHADOWS] [IRLIGHTS_TOON] [IRLIGHTS_VOLUMETRIC] [IRLIGHTS_OUTLINE] <empty>
+            screen.IRLIGHTS_SPECULAR=IRLITE_SPECULAR <empty> IRLITE_SPECULAR_INTENSITY <empty>
+            screen.IRLIGHTS_SHADOWS=IRLITE_SHADOWS IRLITE_SHADOW_QUALITY <empty> <empty> IRLITE_SHADOW_SIZE IRLITE_SHADOW_BIAS IRLITE_SHADOW_NORMAL_OFFSET <empty>
+            screen.IRLIGHTS_TOON=IRLITE_TOON <empty> IRLITE_TOON_BANDS IRLITE_TOON_SMOOTH
+            screen.IRLIGHTS_VOLUMETRIC=IRLITE_VOLUMETRIC IRLITE_VL_INTENSITY IRLITE_VL_RESOLUTION IRLITE_VL_STEPS IRLITE_VL_MAX_DIST <empty> <empty> <empty> IRLITE_VL_SHADOWS IRLITE_VL_SHADOW_STRIDE IRLITE_VL_TIP_BOOST IRLITE_VL_TIP_RADIUS <empty> <empty> IRLITE_VL_NOISE IRLITE_VL_NOISE_AMOUNT IRLITE_VL_NOISE_SCALE IRLITE_VL_NOISE_SPEED IRLITE_VL_NOISE_STRIDE <empty>
+            screen.IRLIGHTS_OUTLINE=IRLITE_OUTLINE IRLITE_OUTLINE_TARGET <empty> <empty> IRLITE_OUTLINE_STRENGTH IRLITE_OUTLINE_PIXEL_SIZE IRLITE_OUTLINE_FRESNEL_POWER <empty> <empty> <empty> IRLITE_OUTLINE_BACK <empty> IRLITE_OUTLINE_FRONT IRLITE_OUTLINE_FRONT_STRENGTH IRLITE_OUTLINE_GLOW IRLITE_OUTLINE_GLOW_STRENGTH
 >>>
-replace "RETRO_FILTER_DEPTH WORLD_CURVATURE_SIZE"
+replace "WATER_BUMP_INTERACTIVE TEXTURE_RES"
 <<<
-RETRO_FILTER_DEPTH WORLD_CURVATURE_SIZE IRLITE_INTENSITY IRLITE_SPECULAR_INTENSITY IRLITE_SPECULAR_SMOOTHNESS IRLITE_SHADOW_SIZE IRLITE_SHADOW_BIAS IRLITE_SHADOW_NORMAL_OFFSET IRLITE_VL_INTENSITY IRLITE_VL_STEPS IRLITE_VL_TIP_BOOST IRLITE_VL_TIP_RADIUS IRLITE_VL_MAX_DIST IRLITE_VL_SHADOW_STRIDE IRLITE_VL_NOISE_AMOUNT IRLITE_VL_NOISE_SCALE IRLITE_VL_NOISE_SPEED IRLITE_VL_NOISE_STRIDE IRLITE_TOON_BANDS IRLITE_TOON_SMOOTH IRLITE_OUTLINE_TARGET IRLITE_OUTLINE_STRENGTH IRLITE_OUTLINE_PIXEL_SIZE IRLITE_OUTLINE_FRESNEL_POWER IRLITE_OUTLINE_BACK IRLITE_OUTLINE_FRONT_STRENGTH IRLITE_OUTLINE_GLOW_STRENGTH
+WATER_BUMP_INTERACTIVE TEXTURE_RES IRLITE_INTENSITY IRLITE_SPECULAR_INTENSITY IRLITE_SHADOW_QUALITY IRLITE_SHADOW_SIZE IRLITE_SHADOW_BIAS IRLITE_SHADOW_NORMAL_OFFSET IRLITE_VL_INTENSITY IRLITE_VL_STEPS IRLITE_VL_SHADOW_STRIDE IRLITE_VL_TIP_BOOST IRLITE_VL_TIP_RADIUS IRLITE_VL_MAX_DIST IRLITE_VL_NOISE_AMOUNT IRLITE_VL_NOISE_SCALE IRLITE_VL_NOISE_SPEED IRLITE_VL_NOISE_STRIDE IRLITE_TOON_BANDS IRLITE_TOON_SMOOTH IRLITE_OUTLINE_TARGET IRLITE_OUTLINE_STRENGTH IRLITE_OUTLINE_PIXEL_SIZE IRLITE_OUTLINE_FRESNEL_POWER IRLITE_OUTLINE_BACK IRLITE_OUTLINE_FRONT_STRENGTH IRLITE_OUTLINE_GLOW_STRENGTH
 >>>
 
 # --- option labels + tooltips ---
 @file shaders/lang/en_US.lang
-after "option.WHITE_WORLD.comment=Replaces textures with flat white color."
+after "option.RESIN_COL_B=Blue"
 <<<
 
-#IRLights
+
 screen.IRLIGHTS=§6§lIRLights§r
 screen.IRLIGHTS.comment=Dynamic point and spot lights from the IRLights BBS addon. Requires the IRLights mod to feed the lights — without it these settings do nothing.
 screen.IRLIGHTS_SPECULAR=§bSpecular
@@ -1803,9 +1665,6 @@ option.IRLITE_SPECULAR.comment=Specular highlight from IRLights lights, using th
 
 option.IRLITE_SPECULAR_INTENSITY=§bSpecular Intensity
 option.IRLITE_SPECULAR_INTENSITY.comment=Multiplier for the IRLights specular highlight.
-
-option.IRLITE_SPECULAR_SMOOTHNESS=§bSmoothness
-option.IRLITE_SPECULAR_SMOOTHNESS.comment=Surface smoothness for the highlight: higher gives a tighter, sharper blick.
 
 option.IRLITE_SHADOWS=§3Light Shadows
 option.IRLITE_SHADOWS.comment=Real-time shadows from IRLights lights, baked by the mod into a spot atlas and a point cube-array. §e[*]§r Turning this OFF also removes the related GPU constructs — use it if the pack fails to compile on exotic drivers.

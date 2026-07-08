@@ -1,22 +1,13 @@
 package org.qualet.irlredactor.light.cookie;
 
 import net.fabricmc.loader.api.FabricLoader;
-import org.lwjgl.opengl.GL11;
-import org.lwjgl.opengl.GL12;
-import org.lwjgl.opengl.GL13;
-import org.lwjgl.opengl.GL15;
-import org.lwjgl.opengl.GL21;
-import org.lwjgl.opengl.GL30;
 import org.lwjgl.stb.STBImage;
-import org.lwjgl.stb.STBImageResize;
-import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
+import org.qualet.irl.light.CookieArrayBase;
 import org.qualet.irlredactor.IRLRedactorMod;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.FloatBuffer;
-import java.nio.IntBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -38,25 +29,29 @@ import java.util.stream.Stream;
  * <p>Images load from {@code config/irl-redactor/cookies/} on demand
  * ({@link #resolve}), resampled to a fixed {@link #RES} square, single channel
  * (R8). {@code CLAMP_TO_BORDER} black so everything outside the image area is
- * blocked (the "slide projector" look).</p>
+ * blocked (the "slide projector" look). The array texture, the guarded upload
+ * and the STB decode/resample live in {@link CookieArrayBase}; this subclass keeps
+ * the config-folder source and the load cache.</p>
  */
-public final class CookieArray
+public final class CookieArray extends CookieArrayBase
 {
     /** Per-layer square resolution; loaded images are resampled to this. */
-    public static final int RES = 512;
+    public static final int RES = CookieArrayBase.RES;
     /** Hard cap on simultaneously loaded distinct cookies (array depth). */
     public static final int MAX_LAYERS = 16;
 
-    private static int glTextureId = 0;
-    private static boolean initialized = false;
+    private static final CookieArray INSTANCE = new CookieArray();
 
     /** file name -> array layer (or -1 cached for a known-bad file, so a broken
-     *  image isn't re-decoded every frame). */
-    private static final Map<String, Integer> nameToLayer = new HashMap<>();
-    private static int nextLayer = 0;
+     *  image isn't re-decoded every frame). A full-array miss is NOT cached, so a
+     *  cookie first requested while full can still load after {@link #reload}. */
+    private final Map<String, Integer> nameToLayer = new HashMap<>();
+    private int nextLayer = 0;
 
     private CookieArray()
-    {}
+    {
+        super(MAX_LAYERS);
+    }
 
     /** {@code config/irl-redactor/cookies/} — where the user drops mask images. */
     public static Path dir()
@@ -67,7 +62,7 @@ public final class CookieArray
     /** Lazy — 0 until the first cookie is uploaded (no VRAM if unused). */
     public static int getGlTextureId()
     {
-        return glTextureId;
+        return INSTANCE.textureId();
     }
 
     /** Image file names in the cookies folder, sorted. Pure IO, no GL — safe from
@@ -108,8 +103,14 @@ public final class CookieArray
 
     /** Resolve a cookie file name to its array layer, loading on first use. Render
      *  thread only (uploads to GL). Returns -1 for an empty name, a failed load, or
-     *  a full array. The result (incl. -1) is cached per name. */
+     *  a full array. A read/decode failure is cached per name (a broken image isn't
+     *  re-decoded every frame); a full-array miss is transient and NOT cached. */
     public static int resolve(String name)
+    {
+        return INSTANCE.resolve0(name);
+    }
+
+    private int resolve0(String name)
     {
         if (name == null || name.isEmpty())
         {
@@ -120,12 +121,16 @@ public final class CookieArray
         {
             return cached;
         }
-        int layer = (nextLayer < MAX_LAYERS) ? load(name) : -1;
+        if (nextLayer >= MAX_LAYERS)
+        {
+            return -1;
+        }
+        int layer = load(name);
         nameToLayer.put(name, layer);
         return layer;
     }
 
-    private static int load(String name)
+    private int load(String name)
     {
         byte[] raw;
         try
@@ -138,137 +143,41 @@ public final class CookieArray
             return -1;
         }
 
-        ByteBuffer rawBuf = MemoryUtil.memAlloc(raw.length);
-        rawBuf.put(raw).flip();
-
-        ByteBuffer img = null;
-        ByteBuffer resized = null;
-        try (MemoryStack stack = MemoryStack.stackPush())
+        ByteBuffer pixels = CookieArrayBase.decode(raw);
+        if (pixels == null)
         {
-            IntBuffer w = stack.mallocInt(1);
-            IntBuffer h = stack.mallocInt(1);
-            IntBuffer c = stack.mallocInt(1);
-
-            img = STBImage.stbi_load_from_memory(rawBuf, w, h, c, 1);   // force 1 channel (grayscale)
-            if (img == null)
-            {
-                IRLRedactorMod.LOGGER.warn("Cookie decode failed: {} ({})", name, STBImage.stbi_failure_reason());
-                return -1;
-            }
-
-            resized = MemoryUtil.memAlloc(RES * RES);
-            STBImageResize.stbir_resize_uint8(img, w.get(0), h.get(0), 0, resized, RES, RES, 0, 1);
-
-            int layer = upload(resized);
+            IRLRedactorMod.LOGGER.warn("Cookie decode failed: {} ({})", name, STBImage.stbi_failure_reason());
+            return -1;
+        }
+        try
+        {
+            int layer = nextLayer++;
+            uploadLayer(pixels, layer);
             IRLRedactorMod.LOGGER.info("Cookie loaded '{}' -> layer {}", name, layer);
             return layer;
         }
         finally
         {
-            if (img != null)
-            {
-                STBImage.stbi_image_free(img);
-            }
-            if (resized != null)
-            {
-                MemoryUtil.memFree(resized);
-            }
-            MemoryUtil.memFree(rawBuf);
+            MemoryUtil.memFree(pixels);
         }
-    }
-
-    /** Upload one RES*RES grayscale buffer into the next free layer, allocating the
-     *  array on first use. Returns the layer index. Saves and restores the GL state
-     *  it touches.
-     *
-     *  <p>Even standalone we run inside Minecraft / Sodium, which routinely leave a
-     *  {@code GL_PIXEL_UNPACK_BUFFER} (PBO) bound and the pixel-store unpack params
-     *  non-default. With a PBO bound, our client {@link ByteBuffer} pointer is
-     *  reinterpreted by the driver as an offset INTO that PBO and it reads garbage;
-     *  a stale {@code UNPACK_ROW_LENGTH}/{@code SKIP_*} skews the image instead. This
-     *  is why a cookie resolved on the first frame at startup (Sodium streaming
-     *  chunks, PBO/unpack dirty) loaded distorted, while one picked later in a clean
-     *  frame loaded fine. Force a clean, tightly-packed client-memory upload (no PBO,
-     *  alignment 1, no row/skip), then restore the prior state.</p> */
-    private static int upload(ByteBuffer pixels)
-    {
-        int prevTex = GL11.glGetInteger(GL30.GL_TEXTURE_BINDING_2D_ARRAY);
-        int prevPbo = GL11.glGetInteger(GL21.GL_PIXEL_UNPACK_BUFFER_BINDING);
-        int prevAlign = GL11.glGetInteger(GL11.GL_UNPACK_ALIGNMENT);
-        int prevRowLen = GL11.glGetInteger(GL11.GL_UNPACK_ROW_LENGTH);
-        int prevSkipRows = GL11.glGetInteger(GL11.GL_UNPACK_SKIP_ROWS);
-        int prevSkipPixels = GL11.glGetInteger(GL11.GL_UNPACK_SKIP_PIXELS);
-        int prevImgHeight = GL11.glGetInteger(GL12.GL_UNPACK_IMAGE_HEIGHT);
-        int prevSkipImages = GL11.glGetInteger(GL12.GL_UNPACK_SKIP_IMAGES);
-
-        GL15.glBindBuffer(GL21.GL_PIXEL_UNPACK_BUFFER, 0);
-        GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 1);
-        GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH, 0);
-        GL11.glPixelStorei(GL11.GL_UNPACK_SKIP_ROWS, 0);
-        GL11.glPixelStorei(GL11.GL_UNPACK_SKIP_PIXELS, 0);
-        GL11.glPixelStorei(GL12.GL_UNPACK_IMAGE_HEIGHT, 0);
-        GL11.glPixelStorei(GL12.GL_UNPACK_SKIP_IMAGES, 0);
-
-        if (!initialized)
-        {
-            init();
-        }
-        GL11.glBindTexture(GL30.GL_TEXTURE_2D_ARRAY, glTextureId);
-
-        int layer = nextLayer++;
-        GL12.glTexSubImage3D(GL30.GL_TEXTURE_2D_ARRAY, 0, 0, 0, layer, RES, RES, 1,
-            GL11.GL_RED, GL11.GL_UNSIGNED_BYTE, pixels);
-
-        GL11.glBindTexture(GL30.GL_TEXTURE_2D_ARRAY, prevTex);
-        GL15.glBindBuffer(GL21.GL_PIXEL_UNPACK_BUFFER, prevPbo);
-        GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, prevAlign);
-        GL11.glPixelStorei(GL11.GL_UNPACK_ROW_LENGTH, prevRowLen);
-        GL11.glPixelStorei(GL11.GL_UNPACK_SKIP_ROWS, prevSkipRows);
-        GL11.glPixelStorei(GL11.GL_UNPACK_SKIP_PIXELS, prevSkipPixels);
-        GL11.glPixelStorei(GL12.GL_UNPACK_IMAGE_HEIGHT, prevImgHeight);
-        GL11.glPixelStorei(GL12.GL_UNPACK_SKIP_IMAGES, prevSkipImages);
-        return layer;
-    }
-
-    private static void init()
-    {
-        int prev = GL11.glGetInteger(GL30.GL_TEXTURE_BINDING_2D_ARRAY);
-        glTextureId = GL11.glGenTextures();
-        GL11.glBindTexture(GL30.GL_TEXTURE_2D_ARRAY, glTextureId);
-
-        GL12.glTexImage3D(GL30.GL_TEXTURE_2D_ARRAY, 0, GL30.GL_R8, RES, RES, MAX_LAYERS, 0,
-            GL11.GL_RED, GL11.GL_UNSIGNED_BYTE, (ByteBuffer) null);
-
-        GL11.glTexParameteri(GL30.GL_TEXTURE_2D_ARRAY, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
-        GL11.glTexParameteri(GL30.GL_TEXTURE_2D_ARRAY, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
-        GL11.glTexParameteri(GL30.GL_TEXTURE_2D_ARRAY, GL11.GL_TEXTURE_WRAP_S, GL13.GL_CLAMP_TO_BORDER);
-        GL11.glTexParameteri(GL30.GL_TEXTURE_2D_ARRAY, GL11.GL_TEXTURE_WRAP_T, GL13.GL_CLAMP_TO_BORDER);
-        try (MemoryStack stack = MemoryStack.stackPush())
-        {
-            FloatBuffer border = stack.floats(0f, 0f, 0f, 0f);   // outside the image = black = blocked
-            GL11.glTexParameterfv(GL30.GL_TEXTURE_2D_ARRAY, GL11.GL_TEXTURE_BORDER_COLOR, border);
-        }
-
-        GL11.glBindTexture(GL30.GL_TEXTURE_2D_ARRAY, prev);
-        initialized = true;
     }
 
     /** Forget all loaded cookies and free the GL texture, so a next {@link #resolve}
      *  reloads from disk (the editor's "refresh" button — picks up edited images). */
     public static void reload()
     {
+        INSTANCE.reload0();
+    }
+
+    private void reload0()
+    {
         nameToLayer.clear();
         nextLayer = 0;
-        delete();
+        deleteTexture();
     }
 
     public static void delete()
     {
-        if (initialized)
-        {
-            GL11.glDeleteTextures(glTextureId);
-            glTextureId = 0;
-            initialized = false;
-        }
+        INSTANCE.deleteTexture();
     }
 }
