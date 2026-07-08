@@ -12,6 +12,7 @@ import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
+import org.qualet.irl.light.LightMath;
 
 /**
  * In-world wireframe guides for the placed lights, gated by
@@ -115,14 +116,9 @@ public final class LightGuideRenderer
 
     private static void drawSpot(BufferBuilder buf, Matrix4f m, float x, float y, float z, PlacedLight l, float r, float g, float b)
     {
-        // Normalized direction (defaults straight down, matching the driver).
-        float dx = l.dirX, dy = l.dirY, dz = l.dirZ;
-        float dlen = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (dlen < 1e-4f)
-        {
-            dx = 0f; dy = -1f; dz = 0f; dlen = 1f;
-        }
-        dx /= dlen; dy /= dlen; dz /= dlen;
+        // Normalized direction (defaults straight down when degenerate).
+        float[] dir = LightMath.normalizeDir(l.dirX, l.dirY, l.dirZ, 0f, -1f, 0f, new float[3]);
+        float dx = dir[0], dy = dir[1], dz = dir[2];
 
         float len = Math.max(1f, Math.min(l.range, MAX_CONE_LEN));
         float radius = (float) (len * Math.tan(Math.toRadians(l.outerAngleDeg * 0.5f)));

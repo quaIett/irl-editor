@@ -9,7 +9,6 @@
     "MouseImGuiMixin",
     "KeyboardImGuiMixin",
     "WorldBlockChangeMixin",
-    "WorldBlockEntityTickersAccessor",
     "iris.ProgramSamplersBuilderMixin",
     "iris.SamplerBindingCubeArrayMixin"
   ],

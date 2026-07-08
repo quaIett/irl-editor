@@ -9,6 +9,12 @@ package org.qualet.irlredactor.light;
  * <p>Field set + units mirror the engine's {@code registerPoint}/{@code registerSpot}
  * contract (see {@link LightRegistry}). The {@link #id} is stable for the life of
  * the instance, which is what the shadow caches key on.</p>
+ *
+ * <p>Doubles as the JSON persistence shape for {@link LightStore}: it is
+ * (de)serialized as-is (Gson, reflective), so field names here ARE the on-disk
+ * schema — rename with care. The handful of fields that must not survive a
+ * save/load round-trip ({@link #id}, {@link #autoShadowEligible}) are marked
+ * {@code transient}, which Gson skips on both sides.</p>
  */
 public class PlacedLight
 {
@@ -19,8 +25,11 @@ public class PlacedLight
 
     private static long NEXT_ID = 1L;
 
-    /** Stable per-light id (keys the shadow tile / dirty / block caches). */
-    public final long id;
+    /** Stable per-light id (keys the shadow tile / dirty / block caches).
+     *  {@code transient}: never persisted — {@link LightStore} mints a fresh id
+     *  (via the constructor) for every light it loads, so ids never collide
+     *  across a save/load cycle. */
+    public final transient long id;
 
     public Type type = Type.POINT;
 
@@ -61,8 +70,11 @@ public class PlacedLight
     /** Auto-light hint, only consulted by {@link LightDriver} on the auto-light
      *  path (manual lights leave it true and ignore it): whether this auto block-
      *  light may take one of the scarce shadow slots. Set false for ultra-weak
-     *  sources like redstone dust so they never waste a slot / cube bake. */
-    public boolean autoShadowEligible = true;
+     *  sources like redstone dust so they never waste a slot / cube bake.
+     *  {@code transient}: auto-lights are never persisted (they're rebuilt by
+     *  {@link org.qualet.irlredactor.light.auto.AutoLightManager} on scan), so
+     *  this always loads back as the default {@code true}. */
+    public transient boolean autoShadowEligible = true;
 
     public PlacedLight()
     {
