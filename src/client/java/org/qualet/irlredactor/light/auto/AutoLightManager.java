@@ -10,7 +10,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.chunk.ChunkSection;
 import net.minecraft.world.chunk.WorldChunk;
-import org.qualet.irlredactor.light.IrisShadersState;
+import org.qualet.irl.light.iris.IrisShadersState;
 import org.qualet.irlredactor.light.LightConfig;
 import org.qualet.irlredactor.light.PlacedLight;
 

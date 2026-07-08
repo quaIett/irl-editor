@@ -1,5 +1,7 @@
 package org.qualet.irlredactor.light;
 
+import org.qualet.irl.light.shadow.ShadowConfig;
+
 /**
  * Plain configuration for the lighting engine — the BBS-free replacement for
  * IRLite's {@code IrliteConfig} (which was backed by BBS settings {@code Value*}).
@@ -8,6 +10,17 @@ package org.qualet.irlredactor.light;
  */
 public final class LightConfig
 {
+    /** Adapter handed to {@link org.qualet.irl.light.shadow.ShadowEngine} at client
+     *  init: the shadow-relevant subset of this config (the five getters
+     *  {@link ShadowConfig} exposes), delegating to the static getters below. */
+    public static final ShadowConfig SHADOW = ShadowConfig.builder()
+            .shadowQuality(LightConfig::shadowQuality)
+            .shadowCache(LightConfig::shadowCache)
+            .shadowBakeBudget(LightConfig::shadowBakeBudget)
+            .shadowBlocks(LightConfig::shadowBlocks)
+            .shadowBlockRadius(LightConfig::shadowBlockRadius)
+            .build();
+
     /** Draw in-world wireframe gizmos for placed lights (default off). */
     public static boolean showGuides = false;
     /** Shadow resolution preset ordinal (0 LOW .. 3 ULTRA), default 1 (MEDIUM). */
@@ -18,12 +31,14 @@ public final class LightConfig
     public static boolean shadowBlocks = true;
     /** Block-shadow collection radius in blocks (default 24). */
     public static int shadowBlockRadius = 24;
-    /** Max full STATIC shadow re-bakes allowed per frame; deferred lamps keep
-     *  their sticky tile's previous (valid) map and retry on a later frame, so
-     *  a mass invalidation (block edit in a shared section, quality change, a
-     *  camera pan across a row of lamps) is spread out instead of spiking. A
-     *  light that has never baked, or just moved tiles, is never deferred.
-     *  {@code <= 0} means unlimited. Default 4. */
+    /** Max full static shadow bakes started per frame before the rest are
+     *  deferred to a later frame (default 4). Spreads a mass invalidation (a
+     *  block edit near a cluster of lamps) across frames instead of one spike;
+     *  the deferred lamps keep their existing (slightly stale) map until baked.
+     *  &lt;= 0 disables throttling (bake everything every frame). First bakes and
+     *  tile-reassign bakes are never deferred (they would sample a blank or
+     *  foreign map); dynamic overlays and static-&gt;live copies are never
+     *  budgeted (they must run every frame). */
     public static int shadowBakeBudget = 4;
 
     // --- Auto block-lights ----------------------------------------------------

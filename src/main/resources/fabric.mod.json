@@ -30,5 +30,8 @@
         "java": ">=21",
         "fabric-api": "*",
         "irl-core": "*"
+    },
+    "breaks": {
+        "bbs": "*"
     }
 }

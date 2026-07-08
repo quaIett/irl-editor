@@ -1,4 +1,4 @@
-package org.qualet.irlredactor.light.shadow;
+package org.qualet.irl.light.shadow;
 
 import it.unimi.dsi.fastutil.floats.FloatArrayList;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;

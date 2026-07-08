@@ -1,79 +1,57 @@
 <#
-.SYNOPSIS
-    One-way sync of the .irlights shader patches from IRLite (source of truth) into IRL-redactor.
+    One-way sync: bbs-irlights-addon/patches/*.irlights -> this repo's bundled
+    resources (src/client/resources/assets/irl-redactor/patches/). The addon is
+    the source of truth; never edit in the other direction.
 
-.DESCRIPTION
-    IRLite owns patch GENERATION (Shadres/ + tools/gen-*-patch.ps1). IRL-redactor only
-    CONSUMES the finished patches. This script copies every *.irlights from IRLite's
-    patches/ folder into the redactor's bundled-resources folder, normalizing to LF so the
-    two repos stay byte-identical (a raw `cmp` is then a valid drift check; see .gitattributes).
-
-    NEVER hand-edit the redactor's copies — re-run this instead. Re-running when already in
-    sync is a no-op.
-
-.PARAMETER IRLitePatches
-    Source folder holding the canonical *.irlights. Defaults to the sibling checkout
-    ../IRLite/patches relative to this repo.
-
-.EXAMPLE
-    pwsh tools/copy-patches.ps1
-    pwsh tools/copy-patches.ps1 -IRLitePatches D:\some\other\IRLite\patches
+    Paths are relative to this script's location so it works regardless of cwd.
 #>
-[CmdletBinding()]
-param(
-    [string]$IRLitePatches
-)
 
 $ErrorActionPreference = 'Stop'
 
-# tools/ sits directly under the repo root.
-$repoRoot = Split-Path -Parent $PSScriptRoot
-$dest     = Join-Path $repoRoot 'src/client/resources/assets/irl-redactor/patches'
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$sourceDir = Join-Path $scriptDir '..\..\bbs-irlights-addon\patches'
+$destDir   = Join-Path $scriptDir '..\src\client\resources\assets\irl-redactor\patches'
 
-if (-not $IRLitePatches) {
-    # Default: sibling IRLite checkout next to this repo (BBS/IRLite, BBS/IRL-redactor).
-    $IRLitePatches = Join-Path (Split-Path -Parent $repoRoot) 'IRLite/patches'
+$sourceDir = (Resolve-Path $sourceDir).Path
+if (-not (Test-Path $destDir))
+{
+    New-Item -ItemType Directory -Path $destDir -Force | Out-Null
 }
+$destDir = (Resolve-Path $destDir).Path
 
-if (-not (Test-Path -LiteralPath $IRLitePatches)) {
-    throw "Source patches folder not found: $IRLitePatches  (pass -IRLitePatches <path>)"
-}
-if (-not (Test-Path -LiteralPath $dest)) {
-    throw "Destination folder not found: $dest"
-}
+$files = Get-ChildItem -Path $sourceDir -Filter '*.irlights' | Sort-Object Name
 
-Write-Host "Source: $IRLitePatches"
-Write-Host "Dest  : $dest"
-Write-Host ""
+$allMatch = $true
+$rows = @()
 
-$utf8NoBom = [System.Text.UTF8Encoding]::new($false)
-$sources   = Get-ChildItem -LiteralPath $IRLitePatches -Filter *.irlights -File
-if ($sources.Count -eq 0) { throw "No *.irlights found in $IRLitePatches" }
+foreach ($file in $files)
+{
+    $destPath = Join-Path $destDir $file.Name
 
-$updated = 0
-$unchanged = 0
-foreach ($f in $sources) {
-    $raw = [IO.File]::ReadAllText($f.FullName)
-    $lf  = $raw -replace "`r`n", "`n" -replace "`r", "`n"   # canonical LF
+    # Byte-for-byte copy, no re-encoding.
+    Copy-Item -Path $file.FullName -Destination $destPath -Force
 
-    $target = Join-Path $dest $f.Name
-    $old = if (Test-Path -LiteralPath $target) { [IO.File]::ReadAllText($target) } else { $null }
+    $srcHash  = (Get-FileHash -Path $file.FullName -Algorithm MD5).Hash
+    $destHash = (Get-FileHash -Path $destPath -Algorithm MD5).Hash
+    $match = $srcHash -eq $destHash
+    if (-not $match) { $allMatch = $false }
 
-    if ($old -ne $lf) {
-        [IO.File]::WriteAllText($target, $lf, $utf8NoBom)
-        Write-Host ("  UPDATED   {0}" -f $f.Name)
-        $updated++
-    } else {
-        Write-Host ("  unchanged {0}" -f $f.Name)
-        $unchanged++
+    $rows += [PSCustomObject]@{
+        Name      = $file.Name
+        SizeBytes = $file.Length
+        SourceMD5 = $srcHash
+        DestMD5   = $destHash
+        Match     = $match
     }
 }
 
-# Flag redactor-side patches that have no source counterpart (possible stale/orphan).
-$srcNames = $sources.Name
-Get-ChildItem -LiteralPath $dest -Filter *.irlights -File |
-    Where-Object { $srcNames -notcontains $_.Name } |
-    ForEach-Object { Write-Warning ("orphan (no source in IRLite): {0}" -f $_.Name) }
+$rows | Format-Table -AutoSize
 
-Write-Host ""
-Write-Host ("Done. {0} updated, {1} unchanged." -f $updated, $unchanged)
+if ($allMatch)
+{
+    Write-Host "OK: source == dest for all $($rows.Count) file(s)." -ForegroundColor Green
+}
+else
+{
+    Write-Host "MISMATCH detected - see table above." -ForegroundColor Red
+}
