@@ -49,6 +49,7 @@
     "irl-redactor.editor.shadowBlockRadius": "Радиус теней блоков",
     "irl-redactor.editor.showGuides": "Показывать гайды",
     "irl-redactor.editor.autoLights": "Авто-свет от блоков",
+    "irl-redactor.editor.autoLightCulling": "Отсекать скрытые",
     "irl-redactor.editor.autoLightShadows": "Тени авто-света",
     "irl-redactor.editor.autoLightIntensity": "Яркость авто-света",
     "irl-redactor.editor.autoLightReach": "Дальность авто-света",
