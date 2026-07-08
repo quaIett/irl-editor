@@ -66,6 +66,7 @@ public class LightEditorPanel
     private final ImBoolean cfgGuides = new ImBoolean(LightConfig.showGuides);
     private final float[]   cfgRadius = { LightConfig.shadowBlockRadius };
     private final ImBoolean cfgAutoLights    = new ImBoolean(LightConfig.autoLights);
+    private final ImBoolean cfgAutoCulling   = new ImBoolean(LightConfig.autoLightCulling);
     private final ImBoolean cfgAutoShadows   = new ImBoolean(LightConfig.autoLightShadows);
     private final float[]   cfgAutoIntensity = { LightConfig.autoLightIntensity };
     private final float[]   cfgAutoReach     = { LightConfig.autoLightReach };
@@ -615,6 +616,12 @@ public class LightEditorPanel
         }
 
         ImGui.beginDisabled(!LightConfig.autoLights);
+        // Surface culling: only light emissive blocks exposed to visible space
+        // (skip ones buried in terrain / inside a solid cluster of emitters).
+        // Picked up by the rolling scan within ~1s.
+        Widgets.toggleRow("cfg_autoculling", Lang.t("irl-redactor.editor.autoLightCulling"), cfgAutoCulling);
+        LightConfig.autoLightCulling = cfgAutoCulling.get();
+
         Widgets.toggleRow("cfg_autoshadows", Lang.t("irl-redactor.editor.autoLightShadows"), cfgAutoShadows);
         LightConfig.autoLightShadows = cfgAutoShadows.get();
 
