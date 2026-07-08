@@ -36,8 +36,15 @@ public final class BlockLightDefs
         /** Whether this auto-light may take a (scarce) shadow slot. False for
          *  ultra-weak sources like redstone dust, so they never waste a slot/bake. */
         public final boolean shadows;
+        /** Lake merge: collapse all emitters of this type within one
+         *  {@code mergeCells}³-block cell to a SINGLE light. 0 or 1 = one light per
+         *  block (the norm). {@code > 1} is for lake-like fluids (lava) that form
+         *  large contiguous expanses and would otherwise spam one light per block
+         *  across a whole lava lake — surface culling can't thin them because a
+         *  lake is nearly all air-exposed surface. See {@code AutoLightManager}. */
+        public final int mergeCells;
 
-        Def(float r, float g, float b, float intensity, float radius, boolean shadows)
+        Def(float r, float g, float b, float intensity, float radius, boolean shadows, int mergeCells)
         {
             this.r = r;
             this.g = g;
@@ -45,8 +52,17 @@ public final class BlockLightDefs
             this.intensity = intensity;
             this.radius = radius;
             this.shadows = shadows;
+            this.mergeCells = mergeCells;
         }
     }
+
+    /** Cell size (blocks) for cluster merge on bulk emitters (lava, glowstone,
+     *  …). Inside a dense cluster, all blocks within one {@code CLUSTER_MERGE_CELLS}³
+     *  cell collapse to a single light, so a lava lake / glowstone vein becomes
+     *  roughly one light per this-many-blocks cubed; with these emitters' wide
+     *  (12-15 block) reach the cell lights overlap into a smooth glow (and the
+     *  thinning also stops the per-block pile-up that over-brightened the mass). */
+    public static final int CLUSTER_MERGE_CELLS = 4;
 
     // IdentityHashMap: Block instances are singletons, so identity == equality
     // and identity hashing is the cheapest correct map.
@@ -64,7 +80,17 @@ public final class BlockLightDefs
 
     private static void put(Block block, float r, float g, float b, float intensity, float radius)
     {
-        DEFS.put(block, new Def(r, g, b, intensity, radius, true));
+        DEFS.put(block, new Def(r, g, b, intensity, radius, true, 0));
+    }
+
+    /** Like {@link #put} but flags this emitter for cluster merge: where blocks of
+     *  this type form a dense cluster, all of them within one {@code mergeCells}³
+     *  cell collapse to a single light. For bulk emitters (lava, glowstone, …).
+     *  Sparse / decorative placements stay one light per block (see
+     *  {@code AutoLightManager} density gate). */
+    private static void putMerged(Block block, float r, float g, float b, float intensity, float radius, int mergeCells)
+    {
+        DEFS.put(block, new Def(r, g, b, intensity, radius, true, mergeCells));
     }
 
     /** Light parameters for this block, or {@code null} if it has no auto-light. */
@@ -118,15 +144,19 @@ public final class BlockLightDefs
         put(Blocks.SOUL_LANTERN,          0.40f, 0.80f, 1.00f, 1.1f, 11f);
 
         // --- full-block emitters --------------------------------------------
-        put(Blocks.GLOWSTONE,             1.00f, 0.86f, 0.60f, 1.5f, 14f);
-        put(Blocks.SEA_LANTERN,           0.80f, 0.95f, 1.00f, 1.4f, 13f);
-        put(Blocks.SHROOMLIGHT,           1.00f, 0.55f, 0.25f, 1.3f, 13f);
-        put(Blocks.JACK_O_LANTERN,        1.00f, 0.70f, 0.30f, 1.3f, 13f);
-        put(Blocks.REDSTONE_LAMP,         1.00f, 0.76f, 0.42f, 1.3f, 13f); // lit only (lum guard)
-        put(Blocks.MAGMA_BLOCK,           1.00f, 0.45f, 0.15f, 0.7f,  6f);
-        put(Blocks.OCHRE_FROGLIGHT,       1.00f, 0.85f, 0.50f, 1.5f, 15f);
-        put(Blocks.VERDANT_FROGLIGHT,     0.80f, 1.00f, 0.70f, 1.5f, 15f);
-        put(Blocks.PEARLESCENT_FROGLIGHT, 1.00f, 0.85f, 0.95f, 1.5f, 15f);
+        // Bulk emitters that occur in dense masses (natural glowstone / shroomlight
+        // veins, froglight & magma piles, sea-lantern builds) are cluster-merged so
+        // a whole vein doesn't spawn one light per block; the density gate in
+        // AutoLightManager keeps sparse / decorative placements one-per-block.
+        putMerged(Blocks.GLOWSTONE,       1.00f, 0.86f, 0.60f, 1.5f, 14f, CLUSTER_MERGE_CELLS);
+        putMerged(Blocks.SEA_LANTERN,     0.80f, 0.95f, 1.00f, 1.4f, 13f, CLUSTER_MERGE_CELLS);
+        putMerged(Blocks.SHROOMLIGHT,     1.00f, 0.55f, 0.25f, 1.3f, 13f, CLUSTER_MERGE_CELLS);
+        put(Blocks.JACK_O_LANTERN,        1.00f, 0.70f, 0.30f, 1.3f, 13f); // decorative -> per-block
+        put(Blocks.REDSTONE_LAMP,         1.00f, 0.76f, 0.42f, 1.3f, 13f); // lit only (lum guard); decorative
+        putMerged(Blocks.MAGMA_BLOCK,     1.00f, 0.45f, 0.15f, 0.7f,  6f, CLUSTER_MERGE_CELLS);
+        putMerged(Blocks.OCHRE_FROGLIGHT,       1.00f, 0.85f, 0.50f, 1.5f, 15f, CLUSTER_MERGE_CELLS);
+        putMerged(Blocks.VERDANT_FROGLIGHT,     0.80f, 1.00f, 0.70f, 1.5f, 15f, CLUSTER_MERGE_CELLS);
+        putMerged(Blocks.PEARLESCENT_FROGLIGHT, 1.00f, 0.85f, 0.95f, 1.5f, 15f, CLUSTER_MERGE_CELLS);
 
         // --- shaped / decorative emitters -----------------------------------
         put(Blocks.END_ROD,               0.95f, 0.95f, 1.00f, 1.2f, 12f);
@@ -134,7 +164,7 @@ public final class BlockLightDefs
         put(Blocks.SOUL_CAMPFIRE,         0.40f, 0.80f, 1.00f, 1.1f, 11f); // lit only
         put(Blocks.FIRE,                  1.00f, 0.60f, 0.25f, 1.3f, 12f);
         put(Blocks.SOUL_FIRE,             0.40f, 0.80f, 1.00f, 1.1f, 11f);
-        put(Blocks.LAVA,                  1.00f, 0.42f, 0.12f, 1.4f, 12f);
+        putMerged(Blocks.LAVA,            1.00f, 0.42f, 0.12f, 1.4f, 12f, CLUSTER_MERGE_CELLS); // lakes: one light per cell
         put(Blocks.BEACON,                0.90f, 0.97f, 1.00f, 1.6f, 16f);
         put(Blocks.CONDUIT,               0.60f, 0.90f, 1.00f, 1.4f, 14f);
         put(Blocks.GLOW_LICHEN,           0.45f, 0.85f, 0.55f, 0.7f,  7f);
@@ -179,7 +209,7 @@ public final class BlockLightDefs
         {
             float t = p / 15f;
             REDSTONE_BY_POWER[p] = new Def(1.0f, 0.06f, 0.0f,
-                0.06f + 0.12f * t, 2.0f + 2.5f * t, false);
+                0.06f + 0.12f * t, 2.0f + 2.5f * t, false, 0);
         }
     }
 }
