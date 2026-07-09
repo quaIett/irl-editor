@@ -28,6 +28,3 @@ run/
 
 # build/run logs (transient)
 *.log
-
-# IterationRP integration — private/paid shader, hidden from repo pending author permission (kept local only)
-src/client/resources/assets/irl-redactor/patches/iterationrp.irlights
