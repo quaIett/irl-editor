@@ -1325,7 +1325,7 @@ before "        // Specular highlight"
         vec3 irlite_specular;
         vec3 irlite_outline;
         irlite_lightSurface(
-            position_world,
+            position_scene,
             normal,
             -direction_world,
             material,
@@ -1364,7 +1364,7 @@ after "    fog_scattering +=\n        get_lpv_fog_scattering(world_start_pos, wo
     // IRLite VL: add inscatter to fog_scattering.
     vec3 irlite_worldDir = normalize(world_end_pos - world_start_pos);
     fog_scattering +=
-        irlite_volumetric(world_start_pos, world_end_pos, irlite_worldDir, dither);
+        irlite_volumetric(gbufferModelViewInverse[3].xyz, scene_pos, irlite_worldDir, dither);
 #endif
 >>>
 
