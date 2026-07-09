@@ -69,9 +69,18 @@ public final class RedactorEntityCasterSource implements ShadowCasterSource
 
     private static void drawEntity(Entity entity, MatrixStack matrices, VertexConsumerProvider.Immediate immediate, float tickDelta)
     {
-        double cx = MathHelper.lerp(tickDelta, entity.lastRenderX, entity.getX());
-        double cy = MathHelper.lerp(tickDelta, entity.lastRenderY, entity.getY());
-        double cz = MathHelper.lerp(tickDelta, entity.lastRenderZ, entity.getZ());
+        // Light-relative bake (irl-core): the shared ShadowRenderer view now looks
+        // from the pass anchor (eye = L - A), so caster geometry must be emitted
+        // relative to that same anchor. Subtract currentOrigin* in double BEFORE
+        // dispatcher.render's float cast, exactly as the IRLite source does — else
+        // absolute cx/cy/cz land ~A (~1e5) outside the light frustum and the
+        // entity's shadow vanishes far from the world origin.
+        double ox = ShadowRenderer.currentOriginX();
+        double oy = ShadowRenderer.currentOriginY();
+        double oz = ShadowRenderer.currentOriginZ();
+        double cx = MathHelper.lerp(tickDelta, entity.lastRenderX, entity.getX()) - ox;
+        double cy = MathHelper.lerp(tickDelta, entity.lastRenderY, entity.getY()) - oy;
+        double cz = MathHelper.lerp(tickDelta, entity.lastRenderZ, entity.getZ()) - oz;
 
         EntityRenderDispatcher dispatcher = MinecraftClient.getInstance().getEntityRenderDispatcher();
         if (dispatcher != null)
