@@ -117,7 +117,7 @@ public final class LightDriver
     private static void emitPoint(PlacedLight l)
     {
         LightRegistry.registerPoint(
-            (float) l.x, (float) l.y, (float) l.z,
+            l.x, l.y, l.z,
             l.r, l.g, l.b,
             l.intensity, l.radius,
             l.entitiesOnly, l.blocksOnly,
@@ -142,7 +142,7 @@ public final class LightDriver
         float cookieFlags = l.cookieInvert ? 1F : 0F;
 
         LightRegistry.registerSpot(
-            (float) l.x, (float) l.y, (float) l.z,
+            l.x, l.y, l.z,
             dx, dy, dz,
             l.r, l.g, l.b,
             l.intensity, l.range, cosOuter, cosInner,
