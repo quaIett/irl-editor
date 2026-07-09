@@ -58,11 +58,18 @@ import java.util.List;
  * issued here (the consumer just records floats); {@link ShadowRenderer} draws
  * the captured triangles itself.</p>
  *
- * <p><b>Coordinate space.</b> Geometry is captured in absolute world coordinates
- * (the entity is rendered at its lerped world position; cutout blocks at their
- * block origin), matching the world-space light view/projection the depth bake
- * uses. {@code ModelPart}/{@code quad} hand the consumer positions already
- * transformed by the matrix, so the consumer applies no matrix of its own.</p>
+ * <p><b>Coordinate space.</b> The entity is rendered at its lerped world position
+ * MINUS the pass's light-relative anchor {@code A = round(lightPos)}
+ * ({@link ShadowRenderer#currentOriginX()}), so captured entity vertices come out in
+ * anchor-relative {@code world - A} space — matching the anchor-relative light view
+ * the depth bake uses (eye {@code = L - A}), the same {@code A} the core block /
+ * cutout arms subtract. The subtraction is done in DOUBLE before {@code
+ * EntityRenderManager.render}'s matrix narrows to float, keeping sub-block precision
+ * at large world coordinates. {@code ModelPart}/{@code quad} hand the consumer
+ * positions already transformed by the matrix, so the consumer applies no matrix of
+ * its own. (The dead {@link #captureCutoutBlockTris} helper still pre-translates to
+ * the absolute block origin; it has no caller on this line — the live cutout bake is
+ * core {@code ShadowRenderer}'s.)</p>
  *
  * <p>Single-threaded (render thread); one shared {@link Capture} + {@link CaptureQueue}.</p>
  */
@@ -132,9 +139,18 @@ public final class OccluderGeometryCapturer
             }
 
             CAPTURE.reset();
-            // Fresh identity stack: the queue renders at the world offset, so
-            // captured vertices come out in absolute world space.
-            mgr.render(state, CAMERA_STATE, wx, wy, wz, new MatrixStack(), QUEUE);
+            // Subtract the pass's light-relative anchor A = round(lightPos) (worldPos
+            // - A) in DOUBLE before EntityRenderManager.render's MatrixStack.translate
+            // narrows to float, so captured vertices come out in anchor-relative
+            // (world - A) space — matching the anchor-relative view eye (L - A) and the
+            // same A the core block / cutout arms subtract. Without it the ~1e5
+            // absolute coords fall outside the light frustum and the entity casts no
+            // shadow. The caster (RedactorEntityCasterSource) records this A alongside
+            // the cached geometry so a later light in a different cell can re-base it.
+            double ox = ShadowRenderer.currentOriginX();
+            double oy = ShadowRenderer.currentOriginY();
+            double oz = ShadowRenderer.currentOriginZ();
+            mgr.render(state, CAMERA_STATE, wx - ox, wy - oy, wz - oz, new MatrixStack(), QUEUE);
             return CAPTURE.toTris(false);
         }
         catch (Throwable t)
