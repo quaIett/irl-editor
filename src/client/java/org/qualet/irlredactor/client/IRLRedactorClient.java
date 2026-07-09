@@ -120,9 +120,11 @@ public class IRLRedactorClient implements ClientModInitializer
             keybindPressed = true;
         }
 
-        // Raw front-edge detect for the physical J key (default bind).
+        // Raw front-edge detect for the editor's currently-bound key. Reads whatever
+        // key/button the open-editor bind points at, so a rebind in Options → Controls
+        // also drives the replay toggle — not the hard-coded default. See isBoundKeyDown.
         long handle = client.getWindow().getHandle();
-        boolean down = GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_J) == GLFW.GLFW_PRESS;
+        boolean down = isBoundKeyDown(handle);
         boolean rawPressed = down && !rawToggleDown;
         rawToggleDown = down;
 
@@ -154,6 +156,29 @@ public class IRLRedactorClient implements ClientModInitializer
             {
                 client.setScreen(new LightEditorScreen());
             }
+        }
+    }
+
+    /**
+     * Raw GLFW read of whatever key/button the {@link #openEditor} bind currently
+     * points at, so a rebind in Options → Controls also drives the replay-overlay
+     * toggle (the vanilla {@code wasPressed()} queue is dead while Replay Mod's
+     * timeline screen is up). Returns false for an unbound key or a scancode bind —
+     * nothing to raw-poll there; the keybind queue still covers fly-camera mode.
+     */
+    private static boolean isBoundKeyDown(long handle)
+    {
+        InputUtil.Key key = KeyBindingHelper.getBoundKeyOf(openEditor);
+        int code = key.getCode();
+        switch (key.getCategory())
+        {
+            case KEYSYM:
+                return code != GLFW.GLFW_KEY_UNKNOWN
+                    && GLFW.glfwGetKey(handle, code) == GLFW.GLFW_PRESS;
+            case MOUSE:
+                return GLFW.glfwGetMouseButton(handle, code) == GLFW.GLFW_PRESS;
+            default: // SCANCODE — no reliable raw poll; rely on the keybind queue.
+                return false;
         }
     }
 
