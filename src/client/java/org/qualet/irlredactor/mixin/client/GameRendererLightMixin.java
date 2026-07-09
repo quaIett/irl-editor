@@ -21,4 +21,21 @@ public class GameRendererLightMixin
         FramePipeline.frame(tickDelta, IrisShadersState::shadersDisabled, LightDriver::collect,
             LightDriver::resetAutoShadowRamp);
     }
+
+    /**
+     * Deferred SSBO upload, injected just AFTER this frame's Camera.update (offset ~180
+     * in renderWorld, still well before WorldRenderer.render / Iris activation at ~562):
+     * the origin the light SSBO is made relative to must be the post-update, current-frame
+     * eye that the shaderpack reconstructs fragments against, not the stale HEAD camera.
+     */
+    @Inject(method = "renderWorld",
+            at = @At(value = "INVOKE",
+                     target = "Lnet/minecraft/client/render/Camera;update(Lnet/minecraft/world/BlockView;Lnet/minecraft/entity/Entity;ZZF)V",
+                     shift = At.Shift.AFTER,
+                     ordinal = 0),
+            require = 1)
+    private void irlite$uploadLights(float tickDelta, long limitTime, MatrixStack matrices, CallbackInfo ci)
+    {
+        FramePipeline.uploadIfPending();
+    }
 }
