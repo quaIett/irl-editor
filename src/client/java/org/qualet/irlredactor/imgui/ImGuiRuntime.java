@@ -69,20 +69,21 @@ public final class ImGuiRuntime
             EditorStyle.apply(ImGui.getStyle());
             loadFonts(io);
 
-            // chain Minecraft's existing GLFW callbacks
-            implGlfw.init(handle, true);
+            // chain Minecraft's existing GLFW callbacks. Routed through reflection for
+            // the same reason as the GL3 init below: another mod's imgui-java may win
+            // on the shared classpath and differ from ours only by return type.
+            invokeBackend(implGlfw, "init", new Class<?>[]{ long.class, boolean.class }, handle, true);
 
-            // ImGuiImplGl3.init(String) is missing from some imgui-java builds that
-            // other mods ship unrelocated (e.g. Axiom), which can shadow our class
-            // on the shared classpath. Fall back to the no-arg init present in every
-            // imgui-java version.
-            try
+            // ImGuiImplGl3.init's return type drifted across imgui-java versions:
+            // boolean in our bundled 1.89.0, void in the older build Axiom ships
+            // unrelocated. A direct call compiles to init()Z and throws
+            // NoSuchMethodError against a loaded init()V. Reflection resolves a method
+            // by name + parameter types and ignores the return type, so it links
+            // against whichever imgui-java actually won on the classpath. Prefer the
+            // (String) overload, falling back to the no-arg one if it is absent.
+            if (!invokeBackend(implGl3, "init", new Class<?>[]{ String.class }, "#version 150"))
             {
-                implGl3.init("#version 150");
-            }
-            catch (NoSuchMethodError missingOverload)
-            {
-                implGl3.init();
+                invokeBackend(implGl3, "init", new Class<?>[]{});
             }
 
             initialized = true;
@@ -95,6 +96,47 @@ public final class ImGuiRuntime
             IRLRedactorMod.LOGGER.warn(
                 "ImGui backend init failed - another mod likely bundles a conflicting "
                 + "imgui-java (e.g. Axiom). The IRL light-editor overlay is disabled.", t);
+        }
+    }
+
+    /**
+     * Invokes an imgui-java backend method ({@code ImGuiImplGl3} / {@code ImGuiImplGlfw})
+     * reflectively, matching on name + parameter types only. Unlike a compiled
+     * {@code invokevirtual}, this ignores the declared return type, so the call still
+     * links when a foreign imgui-java (e.g. the unrelocated copy Axiom bundles) wins on
+     * the shared classpath and the same method differs from ours only by return type.
+     *
+     * @return {@code true} if the method exists and was invoked; {@code false} if no
+     *         such overload exists (so the caller can try a different one). The real
+     *         failure of an existing method is rethrown, not swallowed.
+     */
+    private static boolean invokeBackend(Object backend, String name, Class<?>[] paramTypes, Object... args)
+    {
+        java.lang.reflect.Method method;
+        try
+        {
+            method = backend.getClass().getMethod(name, paramTypes);
+        }
+        catch (NoSuchMethodException absent)
+        {
+            return false;
+        }
+
+        try
+        {
+            method.invoke(backend, args);
+            return true;
+        }
+        catch (IllegalAccessException e)
+        {
+            throw new IllegalStateException("imgui backend " + name + " is not accessible", e);
+        }
+        catch (java.lang.reflect.InvocationTargetException e)
+        {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException re) throw re;
+            if (cause instanceof Error err) throw err;
+            throw new IllegalStateException("imgui backend " + name + " failed", cause);
         }
     }
 
