@@ -835,7 +835,7 @@ vec3 irlite_outlineInk(vec3 playerPos, vec3 flatNormal)
     if (fl2 < 1e-12) return vec3(0.0);
     vec3 n = flatNormal * inversesqrt(fl2);
 
-    vec3 fragWorld = playerPos + cameraPosition;
+    vec3 fragWorld = playerPos;
     vec3 v = -normalize(playerPos);
 
     float fres = pow(clamp(1.0 - abs(dot(n, v)), 0.0, 1.0), IRLITE_OUTLINE_FRESNEL_POWER);
@@ -973,7 +973,7 @@ void irlite_lightSurface(vec3 playerPos, vec3 normalW,
     diffuseOut = vec3(0.0);
     specularOut = vec3(0.0);
 
-    vec3 fragWorld = playerPos + cameraPosition;
+    vec3 fragWorld = playerPos;
 
     // Degenerate-normal fallback: falloff-only diffuse (ndl = 1), skip the normal-dependent terms.
     float n2 = dot(normalW, normalW);
@@ -1485,8 +1485,8 @@ replace "\tgl_FragData[0] = clamp(VolumetricFog, 0.0, 65000.0);"
 	// IRLite per-light VL: marched once here; re-added after the underwater overwrite.
 	vec3 irliteVL = vec3(0.0);
 	if (tc.x <= 1.0 && tc.y <= 1.0) {
-		vec3 irliteStart = gbufferModelViewInverse[3].xyz + cameraPosition;
-		vec3 irliteEnd = mat3(gbufferModelViewInverse) * viewPos0 + gbufferModelViewInverse[3].xyz + cameraPosition;
+		vec3 irliteStart = gbufferModelViewInverse[3].xyz;
+		vec3 irliteEnd = mat3(gbufferModelViewInverse) * viewPos0 + gbufferModelViewInverse[3].xyz;
 		vec3 irliteDir = irliteEnd - irliteStart;
 		float irliteLen = length(irliteDir);
 		if (irliteLen > 0.01) {
