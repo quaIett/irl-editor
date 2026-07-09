@@ -6,7 +6,7 @@
 
 *Place dynamic point lights & spotlights anywhere — with shadows, volumetrics, and per-light specular — through an in-game ImGui editor. Same lighting engine as [IRLights](https://github.com/quaIett/bbs-irlights-addon), but **no BBS required**.*
 
-[![Minecraft](https://img.shields.io/badge/Minecraft-1.20.4%20%7C%201.21.1%20%7C%201.21.4%20%7C%201.21.11-62b47a?style=flat-square&logo=minecraft&logoColor=white)](https://minecraft.net)
+[![Minecraft](https://img.shields.io/badge/Minecraft-1.20.1%20%7C%201.20.4%20%7C%201.21.1%20%7C%201.21.4%20%7C%201.21.11-62b47a?style=flat-square&logo=minecraft&logoColor=white)](https://minecraft.net)
 [![Fabric](https://img.shields.io/badge/Fabric-Loom-dbb967?style=flat-square)](https://fabricmc.net)
 [![ImGui](https://img.shields.io/badge/UI-Dear%20ImGui-ff69b4?style=flat-square)](https://github.com/SpaiR/imgui-java)
 [![License](https://img.shields.io/badge/License-MIT-3da639?style=flat-square)](LICENSE)
@@ -50,6 +50,7 @@ Each Minecraft version lives on its own branch — pick the one that matches you
 | Branch | Minecraft | Notes |
 |---|---|---|
 | [`main`](https://github.com/quaIett/irl-editor/tree/main) | **1.20.4** | primary line |
+| [`port/1.20.1`](https://github.com/quaIett/irl-editor/tree/port/1.20.1) | **1.20.1** | |
 | [`port/1.21.1`](https://github.com/quaIett/irl-editor/tree/port/1.21.1) | **1.21.1** | |
 | [`port/1.21.4`](https://github.com/quaIett/irl-editor/tree/port/1.21.4) | **1.21.4** | |
 | [`port/1.21.11`](https://github.com/quaIett/irl-editor/tree/port/1.21.11) | **1.21.11** | raw-GL shadow path |
@@ -94,14 +95,20 @@ no manual GLSL edits required.
 
 ## Building from Source
 
+The editor consumes the shared [irl-core](https://github.com/quaIett/irl-core) engine as a
+**per-version Maven dependency**, so publish the matching core to mavenLocal first:
+
 ```bash
-# the checked-out branch determines the target Minecraft version
-./gradlew build
-# output: build/libs/irl-redactor-1.0-obt.jar
+# 1) publish the matching core (from the irl-core repo, on your MC version's branch)
+../irl-core/gradlew publishToMavenLocal
+
+# 2) build the editor — the checked-out branch determines the target Minecraft version
+./gradlew build --refresh-dependencies
+# output: build/libs/irl-redactor-1.1+mc<version>.jar
 ```
 
-The mod bundles the shared [irl-core](https://github.com/quaIett/irl-core) engine (Gradle composite
-build + Loom `include`) and `imgui-java` (binding + lwjgl3 + natives) so the prod jar runs standalone.
+`irl-core` is remapped to the branch's mappings and JiJ-bundled via Loom's `include`, alongside
+`imgui-java` (binding + lwjgl3 + natives), so the prod jar runs standalone.
 
 ---
 
