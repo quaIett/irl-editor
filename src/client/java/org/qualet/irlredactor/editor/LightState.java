@@ -31,8 +31,12 @@ public class LightState
     public final float[] aniso     = {0.4f};    // -0.95..0.95
     public final float[] bulb      = {0f};      // 0..2
 
-    /** Absolute world position (X/Y/Z). Driven by the placement group / LightSync. */
-    public final float[] pos = {0f, 0f, 0f};
+    /** Absolute world position (X/Y/Z). Driven by the placement group / LightSync.
+     *  Double, not float: at large world coordinates (~1e5) a float quantizes to a
+     *  ~8mm lattice, and the gizmo's per-frame write-back would re-snap the light
+     *  every frame of a drag (visible stutter). Kept exact here; narrowing happens
+     *  only in the camera-relative differences fed to rendering. */
+    public final double[] pos = {0.0, 0.0, 0.0};
     /** Spot world-space direction (local +Z); normalized by the driver. Default down. */
     public final float[] dir = {0f, -1f, 0f};
 

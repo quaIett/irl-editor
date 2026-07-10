@@ -397,9 +397,9 @@ public class LightEditorPanel
             Vec3d eye = playerEye();
             if (eye != null)
             {
-                state.pos[0] = (float) eye.x;
-                state.pos[1] = (float) eye.y;
-                state.pos[2] = (float) eye.z;
+                state.pos[0] = eye.x;
+                state.pos[1] = eye.y;
+                state.pos[2] = eye.z;
             }
         }
 
@@ -721,9 +721,13 @@ public class LightEditorPanel
         boolean using = ImGuizmo.isUsing();
         if (using)
         {
-            state.pos[0] = (float) (cp.x + gizmoModel[12]);
-            state.pos[1] = (float) (cp.y + gizmoModel[13]);
-            state.pos[2] = (float) (cp.z + gizmoModel[14]);
+            // Keep the write-back in double: cp is exact and gizmoModel's translation
+            // is a small camera-relative float. Narrowing the SUM to float would
+            // re-snap the light to the ~8mm float lattice at large coordinates on
+            // every frame of the drag (stuttering handle).
+            state.pos[0] = cp.x + gizmoModel[12];
+            state.pos[1] = cp.y + gizmoModel[13];
+            state.pos[2] = cp.z + gizmoModel[14];
 
             if (spot)
             {
