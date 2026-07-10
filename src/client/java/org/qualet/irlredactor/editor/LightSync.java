@@ -63,7 +63,7 @@ public final class LightSync
         s.cookieScale[0] = l.cookieScale;
         s.cookieInvert.set(l.cookieInvert);
 
-        s.pos[0] = (float) l.x; s.pos[1] = (float) l.y; s.pos[2] = (float) l.z;
+        s.pos[0] = l.x; s.pos[1] = l.y; s.pos[2] = l.z;
         s.dir[0] = l.dirX; s.dir[1] = l.dirY; s.dir[2] = l.dirZ;
     }
 
