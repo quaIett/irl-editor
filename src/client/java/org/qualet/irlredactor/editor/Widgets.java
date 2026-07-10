@@ -63,6 +63,7 @@ public final class Widgets
     private static final int COL_TRI       = ImColor.rgba(0x6f, 0x6f, 0x6f, 0xff);
 
     private static final Map<String, Float> DRAG_START_VAL = new HashMap<>();
+    private static final Map<String, Double> DRAG_START_VAL_D = new HashMap<>();
     private static final Map<String, Float> DRAG_START_X = new HashMap<>();
     private static final Map<String, Boolean> OPEN = new HashMap<>();
 
@@ -294,6 +295,55 @@ public final class Widgets
             float startX = DRAG_START_X.getOrDefault(id, ImGui.getMousePos().x);
             float startVal = DRAG_START_VAL.getOrDefault(id, v[idx]);
             float nv = startVal + (ImGui.getMousePos().x - startX) * speed;
+            if (nv != v[idx])
+            {
+                v[idx] = nv;
+                changed = true;
+            }
+            ImGui.setMouseCursor(ImGuiMouseCursor.ResizeEW);
+        }
+        else if (ImGui.isItemHovered())
+        {
+            ImGui.setMouseCursor(ImGuiMouseCursor.ResizeEW);
+        }
+
+        ImDrawList dl = ImGui.getWindowDrawList();
+        dl.addRectFilled(pos.x, pos.y, pos.x + width, pos.y + height, COL_BG);
+
+        float textY = pos.y + (height - ImGui.getTextLineHeight()) * 0.5f;
+        shadowText(dl, pos.x + 9f, textY, COL_LABEL, COL_LABEL_SH, label);
+
+        String value = String.format(Locale.ROOT, fmt, v[idx]);
+        float vw = ImGui.calcTextSize(value).x;
+        shadowText(dl, pos.x + width - 9f - vw, textY, COL_VALUE, COL_VALUE_SH, value);
+
+        return changed;
+    }
+
+    /** Double variant of {@link #dragValue(String, String, float[], int, float, String)}
+     *  for absolute world positions: the drag delta is applied to the double start
+     *  value, so a value like 100000.00 does not get re-snapped to the float lattice
+     *  (~8mm at 1e5) on every frame of a drag. */
+    public static boolean dragValue(String id, String label, double[] v, int idx, float speed, String fmt)
+    {
+        float width = ImGui.getContentRegionAvail().x;
+        ImVec2 pos = ImGui.getCursorScreenPos();
+        float height = 24f;
+
+        ImGui.invisibleButton("##" + id, width, height);
+        boolean changed = false;
+
+        if (ImGui.isItemActivated())
+        {
+            DRAG_START_VAL_D.put(id, v[idx]);
+            DRAG_START_X.put(id, ImGui.getMousePos().x);
+        }
+
+        if (ImGui.isItemActive())
+        {
+            float startX = DRAG_START_X.getOrDefault(id, ImGui.getMousePos().x);
+            double startVal = DRAG_START_VAL_D.getOrDefault(id, v[idx]);
+            double nv = startVal + (double) ((ImGui.getMousePos().x - startX) * speed);
             if (nv != v[idx])
             {
                 v[idx] = nv;
