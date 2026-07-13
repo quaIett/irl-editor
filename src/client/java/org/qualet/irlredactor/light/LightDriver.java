@@ -7,7 +7,7 @@ import org.qualet.irl.light.LightMath;
 import org.qualet.irl.light.LightRegistry;
 import org.qualet.irlredactor.light.auto.AutoLightManager;
 import org.qualet.irlredactor.light.cookie.CookieArray;
-import org.qualet.irl.light.shadow.PointShadowArray;
+import org.qualet.irl.light.shadow.PointShadowTiers;
 
 /**
  * Feeds the {@link LightScene} into the {@link LightRegistry} each frame — the
@@ -77,8 +77,9 @@ public final class LightDriver
         // Auto block-lights (torch / glowstone / ...), all point lights. Fed AFTER
         // the manual lights and capped to the SSBO headroom so a manual light is
         // never dropped at the 256-light limit. Only the nearest few cast shadows:
-        //   - reserve the cube slots manual point lights need (PointShadowArray has
-        //     MAX_SHADOWS), so an auto-light never starves a manual one of a slot;
+        //   - reserve the cube slots manual point lights need (PointShadowTiers
+        //     totals the tiers' slots), so an auto-light never starves a manual
+        //     one of a slot;
         //   - ramp the count up over frames so a freshly-lit area doesn't first-bake
         //     every cube in a single frame.
         // Nearest-first feed means the closest emitters win the shadow grants.
@@ -88,9 +89,9 @@ public final class LightDriver
             int feedMax = Math.min(LightConfig.autoLightMax(), headroom);
             java.util.List<PlacedLight> autos = AutoLightManager.nearest(cameraPos, feedMax);
 
-            autoShadowRamp = Math.min(PointShadowArray.MAX_SHADOWS, autoShadowRamp + AUTO_SHADOW_RAMP_STEP);
+            autoShadowRamp = Math.min(PointShadowTiers.totalSlots(), autoShadowRamp + AUTO_SHADOW_RAMP_STEP);
             int shadowBudget = LightConfig.autoLightShadows()
-                ? Math.min(autoShadowRamp, Math.max(0, PointShadowArray.MAX_SHADOWS - manualShadowPoints))
+                ? Math.min(autoShadowRamp, Math.max(0, PointShadowTiers.totalSlots() - manualShadowPoints))
                 : 0;
 
             // Grant shadows to the nearest ELIGIBLE auto-lights up to the budget;
