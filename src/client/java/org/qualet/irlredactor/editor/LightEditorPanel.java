@@ -73,6 +73,21 @@ public class LightEditorPanel
     private final float[]   cfgAutoRadius    = { LightConfig.autoLightRadius };
     private final float[]   cfgAutoMax       = { LightConfig.autoLightMax };
 
+    // Global-VL mirrors: pushed into the binding-7 globals UBO each frame by
+    // LightDriver.collect, so every knob applies live (no shader recompile).
+    private final float[]   cfgVlIntensity    = { LightConfig.vlIntensity };
+    private final float[]   cfgVlSteps        = { LightConfig.vlSteps };
+    private final float[]   cfgVlMaxDist      = { LightConfig.vlMaxDist };
+    private final ImBoolean cfgVlShadows      = new ImBoolean(LightConfig.vlShadows);
+    private final float[]   cfgVlShadowStride = { LightConfig.vlShadowStride };
+    private final float[]   cfgVlTipBoost     = { LightConfig.vlTipBoost };
+    private final float[]   cfgVlTipRadius    = { LightConfig.vlTipRadius };
+    private final ImBoolean cfgVlNoise        = new ImBoolean(LightConfig.vlNoise);
+    private final float[]   cfgVlNoiseAmount  = { LightConfig.vlNoiseAmount };
+    private final float[]   cfgVlNoiseScale   = { LightConfig.vlNoiseScale };
+    private final float[]   cfgVlNoiseSpeed   = { LightConfig.vlNoiseSpeed };
+    private final float[]   cfgVlNoiseStride  = { LightConfig.vlNoiseStride };
+
     /** Experimental-feature warning popup id. */
     private static final String WARN_POPUP_ID = "##irl_auto_warn";
     /** Shown once per game session (JVM): set when the warning is first displayed
@@ -136,6 +151,7 @@ public class LightEditorPanel
 
             ImGui.separator();
             engineGroup();
+            vlGroup();
 
             ImGui.separator();
             Widgets.textDisabled(Lang.t("irl-redactor.editor.footer"));
@@ -653,6 +669,69 @@ public class LightEditorPanel
         {
             patcher.open();
         }
+    }
+
+    // ---- global volumetrics (live) ----------------------------------------
+
+    /** Scene-wide volumetric knobs, applied live: every value is written back
+     *  into {@link LightConfig} and pushed to the binding-7 globals UBO by the
+     *  driver next frame — no shaderpack recompile. Ranges and defaults mirror
+     *  the Complementary pack's IRLITE_VL_* option lists (same as IRLite's BBS
+     *  settings). Only shaderpacks patched with runtime VL globals respond;
+     *  older patches keep their compiled values. */
+    private void vlGroup()
+    {
+        if (!Widgets.collapsingHeader("vl_global", Lang.t("irl-redactor.editor.vlGlobal"), false))
+        {
+            return;
+        }
+
+        Widgets.trackpad("cfg_vlintensity", Lang.t("irl-redactor.editor.vlIntensity"), cfgVlIntensity, 0f, 5f, "%.2f");
+        LightConfig.vlIntensity = cfgVlIntensity[0];
+
+        Widgets.trackpad("cfg_vlsteps", Lang.t("irl-redactor.editor.vlSteps"), cfgVlSteps, 8f, 64f, "%.0f");
+        LightConfig.vlSteps = Math.round(cfgVlSteps[0]);
+
+        Widgets.trackpad("cfg_vlmaxdist", Lang.t("irl-redactor.editor.vlMaxDist"), cfgVlMaxDist, 32f, 256f, "%.0f");
+        LightConfig.vlMaxDist = cfgVlMaxDist[0];
+
+        Widgets.trackpad("cfg_vltipboost", Lang.t("irl-redactor.editor.vlTipBoost"), cfgVlTipBoost, 0f, 4f, "%.2f");
+        LightConfig.vlTipBoost = cfgVlTipBoost[0];
+
+        Widgets.trackpad("cfg_vltipradius", Lang.t("irl-redactor.editor.vlTipRadius"), cfgVlTipRadius, 0.5f, 4f, "%.2f");
+        LightConfig.vlTipRadius = cfgVlTipRadius[0];
+
+        Widgets.toggleRow("cfg_vlshadows", Lang.t("irl-redactor.editor.vlShadows"), cfgVlShadows);
+        LightConfig.vlShadows = cfgVlShadows.get();
+
+        ImGui.beginDisabled(!LightConfig.vlShadows);
+        Widgets.trackpad("cfg_vlshadowstride", Lang.t("irl-redactor.editor.vlShadowStride"), cfgVlShadowStride, 1f, 4f, "%.0f");
+        LightConfig.vlShadowStride = Math.round(cfgVlShadowStride[0]);
+        ImGui.endDisabled();
+
+        Widgets.toggleRow("cfg_vlnoise", Lang.t("irl-redactor.editor.vlNoise"), cfgVlNoise);
+        LightConfig.vlNoise = cfgVlNoise.get();
+
+        ImGui.beginDisabled(!LightConfig.vlNoise);
+        Widgets.trackpad("cfg_vlnoiseamount", Lang.t("irl-redactor.editor.vlNoiseAmount"), cfgVlNoiseAmount, 0.2f, 1f, "%.2f");
+        LightConfig.vlNoiseAmount = cfgVlNoiseAmount[0];
+
+        Widgets.trackpad("cfg_vlnoisescale", Lang.t("irl-redactor.editor.vlNoiseScale"), cfgVlNoiseScale, 0.5f, 6f, "%.2f");
+        LightConfig.vlNoiseScale = cfgVlNoiseScale[0];
+
+        // Snap to 0.25 in the mirror too, so the readout shows the effective
+        // value: the shader's wind is whole field-periods per its 3600 s time
+        // wrap, and in-between speeds would make the fog pop on the wrap (the
+        // core setter quantizes as well — this is just honest UI).
+        Widgets.trackpad("cfg_vlnoisespeed", Lang.t("irl-redactor.editor.vlNoiseSpeed"), cfgVlNoiseSpeed, 0f, 3f, "%.2f");
+        cfgVlNoiseSpeed[0] = Math.round(cfgVlNoiseSpeed[0] * 4f) / 4f;
+        LightConfig.vlNoiseSpeed = cfgVlNoiseSpeed[0];
+
+        Widgets.trackpad("cfg_vlnoisestride", Lang.t("irl-redactor.editor.vlNoiseStride"), cfgVlNoiseStride, 1f, 4f, "%.0f");
+        LightConfig.vlNoiseStride = Math.round(cfgVlNoiseStride[0]);
+        ImGui.endDisabled();
+
+        Widgets.textDisabled(Lang.t("irl-redactor.editor.vlHint"));
     }
 
     // ---- move gizmo --------------------------------------------------------

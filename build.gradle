@@ -58,8 +58,8 @@ dependencies {
 	// Per-version Loom module from mavenLocal: modClientImplementation remaps it from
 	// intermediary to this mod's named mappings; `include` bundles it (JiJ). Publish it
 	// with `gradlew publishToMavenLocal` in ../irl-core before building this mod.
-	modClientImplementation "org.qualet:irl-core:1.1"
-	include "org.qualet:irl-core:1.1"
+	modClientImplementation "org.qualet:irl-core:1.2"
+	include "org.qualet:irl-core:1.2"
 
 	// imgui-java: binding + LWJGL3 backend (client only). LWJGL itself is provided
 	// by Minecraft, so the backend's transitive LWJGL is excluded to avoid a second

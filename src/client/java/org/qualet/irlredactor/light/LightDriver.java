@@ -5,9 +5,10 @@ import net.minecraft.util.math.Vec3d;
 import org.qualet.irl.light.LightBuffer;
 import org.qualet.irl.light.LightMath;
 import org.qualet.irl.light.LightRegistry;
+import org.qualet.irl.light.VlGlobalsBuffer;
 import org.qualet.irlredactor.light.auto.AutoLightManager;
 import org.qualet.irlredactor.light.cookie.CookieArray;
-import org.qualet.irl.light.shadow.PointShadowTiers;
+import org.qualet.irl.light.shadow.PointDepthAtlas;
 
 /**
  * Feeds the {@link LightScene} into the {@link LightRegistry} each frame — the
@@ -43,6 +44,23 @@ public final class LightDriver
 
     public static void collect(ClientWorld world, Vec3d cameraPos, float tickDelta)
     {
+        // Track the global-VL knobs each frame: they land in the globals UBO
+        // (binding 7) on the SSBO upload, so UBO-era shader patches read every
+        // VL number and flag live without a recompile (edited in the panel's
+        // "Global volumetrics" group, see LightEditorPanel.vlGroup).
+        VlGlobalsBuffer.set(
+            LightConfig.vlIntensity(),
+            LightConfig.vlMaxDist(),
+            LightConfig.vlTipBoost(),
+            LightConfig.vlTipRadius(),
+            LightConfig.vlNoiseAmount(),
+            LightConfig.vlNoiseScale(),
+            LightConfig.vlNoiseSpeed(),
+            LightConfig.vlSteps(),
+            LightConfig.vlShadowStride(),
+            LightConfig.vlNoiseStride(),
+            (LightConfig.vlShadows() ? 1 : 0) | (LightConfig.vlNoise() ? 2 : 0));
+
         if (world == null || cameraPos == null)
         {
             return;
@@ -77,8 +95,8 @@ public final class LightDriver
         // Auto block-lights (torch / glowstone / ...), all point lights. Fed AFTER
         // the manual lights and capped to the SSBO headroom so a manual light is
         // never dropped at the 256-light limit. Only the nearest few cast shadows:
-        //   - reserve the cube slots manual point lights need (PointShadowTiers
-        //     totals the tiers' slots), so an auto-light never starves a manual
+        //   - reserve the atlas blocks manual point lights need (PointDepthAtlas
+        //     totals the tiers' blocks), so an auto-light never starves a manual
         //     one of a slot;
         //   - ramp the count up over frames so a freshly-lit area doesn't first-bake
         //     every cube in a single frame.
@@ -89,9 +107,9 @@ public final class LightDriver
             int feedMax = Math.min(LightConfig.autoLightMax(), headroom);
             java.util.List<PlacedLight> autos = AutoLightManager.nearest(cameraPos, feedMax);
 
-            autoShadowRamp = Math.min(PointShadowTiers.totalSlots(), autoShadowRamp + AUTO_SHADOW_RAMP_STEP);
+            autoShadowRamp = Math.min(PointDepthAtlas.blockCount(), autoShadowRamp + AUTO_SHADOW_RAMP_STEP);
             int shadowBudget = LightConfig.autoLightShadows()
-                ? Math.min(autoShadowRamp, Math.max(0, PointShadowTiers.totalSlots() - manualShadowPoints))
+                ? Math.min(autoShadowRamp, Math.max(0, PointDepthAtlas.blockCount() - manualShadowPoints))
                 : 0;
 
             // Grant shadows to the nearest ELIGIBLE auto-lights up to the budget;

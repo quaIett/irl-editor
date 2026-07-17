@@ -80,6 +80,42 @@ public final class LightConfig
      *  {@code LightBuffer.MAX_LIGHTS} (256) with headroom for manual lights. */
     public static int autoLightMax = 200;
 
+    // --- Global volumetrics (live) ---------------------------------------------
+    // Runtime VL globals, pushed into the binding-7 globals UBO every frame by
+    // LightDriver.collect so UBO-era shader patches read them live without a
+    // recompile. Defaults mirror the Complementary pack's compiled #define
+    // values (IRLITE_VL_*), so an untouched editor looks identical to the pack.
+
+    /** Global volumetric intensity multiplier (default 1.0 = pack default). */
+    public static float vlIntensity = 1.0f;
+    /** Ray-march steps per light in the volumetric pass (default 48). Higher is
+     *  smoother but costs performance on every beam-covered pixel. */
+    public static int vlSteps = 48;
+    /** Maximum volumetric ray distance in blocks (default 96). */
+    public static float vlMaxDist = 96f;
+    /** Per-step shadowing of the VL beams (default on) — UBO flags bit 0. */
+    public static boolean vlShadows = true;
+    /** Tap the shadow maps every Nth march step, reusing the result in between
+     *  (default 2; 1 = every step). Halves the VL shadow cost at 2. */
+    public static int vlShadowStride = 2;
+    /** Extra volumetric glow near the light source itself (default 1.5). */
+    public static float vlTipBoost = 1.5f;
+    /** Radius of the tip glow around the source, in blocks (default 1.5). */
+    public static float vlTipRadius = 1.5f;
+    /** Animated density noise breaking the beams into drifting puffs
+     *  (default on) — UBO flags bit 1. */
+    public static boolean vlNoise = true;
+    /** How strongly the noise modulates the beam, 0.2..1 (default 0.6). */
+    public static float vlNoiseAmount = 0.6f;
+    /** Approximate size of the noise puffs, in blocks (default 2.0). */
+    public static float vlNoiseScale = 2.0f;
+    /** Noise drift speed (default 0.25). Kept a multiple of 0.25 — the shader's
+     *  wind is whole field-periods per its 3600 s time wrap, so in-between values
+     *  would make the fog pop on the wrap (the core setter quantizes too). */
+    public static float vlNoiseSpeed = 0.25f;
+    /** Sample the density noise every Nth march step (default 2; 1 = every step). */
+    public static int vlNoiseStride = 2;
+
     private LightConfig()
     {}
 
@@ -146,5 +182,65 @@ public final class LightConfig
     public static int autoLightMax()
     {
         return autoLightMax;
+    }
+
+    public static float vlIntensity()
+    {
+        return vlIntensity;
+    }
+
+    public static int vlSteps()
+    {
+        return vlSteps;
+    }
+
+    public static float vlMaxDist()
+    {
+        return vlMaxDist;
+    }
+
+    public static boolean vlShadows()
+    {
+        return vlShadows;
+    }
+
+    public static int vlShadowStride()
+    {
+        return vlShadowStride;
+    }
+
+    public static float vlTipBoost()
+    {
+        return vlTipBoost;
+    }
+
+    public static float vlTipRadius()
+    {
+        return vlTipRadius;
+    }
+
+    public static boolean vlNoise()
+    {
+        return vlNoise;
+    }
+
+    public static float vlNoiseAmount()
+    {
+        return vlNoiseAmount;
+    }
+
+    public static float vlNoiseScale()
+    {
+        return vlNoiseScale;
+    }
+
+    public static float vlNoiseSpeed()
+    {
+        return vlNoiseSpeed;
+    }
+
+    public static int vlNoiseStride()
+    {
+        return vlNoiseStride;
     }
 }
