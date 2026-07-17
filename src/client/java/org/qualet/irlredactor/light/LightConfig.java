@@ -115,6 +115,12 @@ public final class LightConfig
     public static float vlNoiseSpeed = 0.25f;
     /** Sample the density noise every Nth march step (default 2; 1 = every step). */
     public static int vlNoiseStride = 2;
+    /** Blue-noise dither of the VL march start instead of the pack's white-ish
+     *  hash (default on) — UBO flags bit 2. */
+    public static boolean vlBlueNoise = true;
+    /** Rotate the dither pattern every frame (default on) — UBO flags bit 3.
+     *  If recorded footage shimmers on moving lamps without TAA, switch off per shot. */
+    public static boolean vlDitherTemporal = true;
 
     private LightConfig()
     {}
@@ -242,5 +248,15 @@ public final class LightConfig
     public static int vlNoiseStride()
     {
         return vlNoiseStride;
+    }
+
+    public static boolean vlBlueNoise()
+    {
+        return vlBlueNoise;
+    }
+
+    public static boolean vlDitherTemporal()
+    {
+        return vlDitherTemporal;
     }
 }

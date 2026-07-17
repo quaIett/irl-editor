@@ -117,8 +117,8 @@ layout(std430, binding = 7) buffer IrliteLights
 layout(std140, binding = 7) uniform IrliteVlGlobals
 {
     vec4 irlite_vlA;   // x intensity, y maxDist, z tipBoost, w tipRadius
-    vec4 irlite_vlB;   // x noiseAmount, y noiseScale, z noiseSpeed, w reserved0
-    uvec4 irlite_vlC;  // x stepMax, y shadowStride, z noiseStride, w flags (bit0 shadows, bit1 noise)
+    vec4 irlite_vlB;   // x noiseAmount, y noiseScale, z noiseSpeed, w frameIndex (0..4095, temporal dither rotation)
+    uvec4 irlite_vlC;  // x stepMax, y shadowStride, z noiseStride, w flags (bit0 shadows, bit1 noise, bit2 blueNoise, bit3 ditherTemporal)
 };
 
 // ---- cluster grid (binding 6) — std430 mirror of ClusterGridBuffer.java; per-fragment screen-tile light mask ----
@@ -1602,6 +1602,8 @@ vec2 view = vec2(viewWidth, viewHeight);
 #define IRLITE_VL_PASS
 #include "/lib/irlite/irlite_lights.glsl"
 
+uniform sampler2D irl_blueNoise;    // 128x128 R8 void-and-cluster dither array, bound by the mod by name (only this TU declares it)
+
 //Program//
 void main() {
     vec3 irliteVL = vec3(0.0);
@@ -1614,10 +1616,18 @@ void main() {
         vec3 viewPos = ScreenToView(vec3(texCoord, z0));
         vec3 playerPos = ViewToPlayer(viewPos);
 
+        // March-start dither: mod-owned spatial blue noise (vlC.w bit2, default ON) pushes the
+        // banding into frequencies the eye discards; bit3 adds a golden-ratio temporal rotation
+        // driven by the UBO frameIndex (vlB.w) — OFF by default (boils on moving lamps sans TAA).
+        // This pass runs at reduced res; gl_FragCoord is pass-res, which is correct for dithering.
+        bool useBn = (irlite_vlC.w & 4u) != 0u;
+        float bn = texelFetch(irl_blueNoise, ivec2(gl_FragCoord.xy) & 127, 0).r;
+        if ((irlite_vlC.w & 8u) != 0u) bn = fract(bn + float(int(irlite_vlB.w)) * 0.61803398875);
         float dither = texture2DLod(noisetex, texCoord * view / 128.0, 0.0).b;
         #ifdef TAA
             dither = fract(dither + goldenRatio * mod(float(frameCounter), 3600.0));
         #endif
+        dither = useBn ? bn : dither;
 
         irliteVL = irlite_volumetric(vec3(0.0), playerPos,
                                      normalize(playerPos), dither);

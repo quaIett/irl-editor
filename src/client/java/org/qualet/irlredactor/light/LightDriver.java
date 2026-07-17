@@ -59,7 +59,8 @@ public final class LightDriver
             LightConfig.vlSteps(),
             LightConfig.vlShadowStride(),
             LightConfig.vlNoiseStride(),
-            (LightConfig.vlShadows() ? 1 : 0) | (LightConfig.vlNoise() ? 2 : 0));
+            (LightConfig.vlShadows() ? 1 : 0) | (LightConfig.vlNoise() ? 2 : 0)
+                | (LightConfig.vlBlueNoise() ? 4 : 0) | (LightConfig.vlDitherTemporal() ? 8 : 0));
 
         if (world == null || cameraPos == null)
         {
