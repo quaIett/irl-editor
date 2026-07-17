@@ -89,6 +89,7 @@ public class LightEditorPanel
     private final float[]   cfgVlNoiseStride  = { LightConfig.vlNoiseStride };
     private final ImBoolean cfgVlBlueNoise      = new ImBoolean(LightConfig.vlBlueNoise);
     private final ImBoolean cfgVlDitherTemporal = new ImBoolean(LightConfig.vlDitherTemporal);
+    private final ImBoolean cfgVlClusterCull    = new ImBoolean(LightConfig.vlClusterCull);
 
     /** Experimental-feature warning popup id. */
     private static final String WARN_POPUP_ID = "##irl_auto_warn";
@@ -743,6 +744,9 @@ public class LightEditorPanel
         {
             Widgets.textDisabled(Lang.t("irl-redactor.editor.vlDitherTemporalWarn"));
         }
+
+        Widgets.toggleRow("cfg_vlclustercull", Lang.t("irl-redactor.editor.vlClusterCull"), cfgVlClusterCull);
+        LightConfig.vlClusterCull = cfgVlClusterCull.get();
 
         Widgets.textDisabled(Lang.t("irl-redactor.editor.vlHint"));
     }

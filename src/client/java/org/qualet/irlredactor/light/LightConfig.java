@@ -121,6 +121,10 @@ public final class LightConfig
     /** Rotate the dither pattern every frame (default on) — UBO flags bit 3.
      *  If recorded footage shimmers on moving lamps without TAA, switch off per shot. */
     public static boolean vlDitherTemporal = true;
+    /** Skip lights per screen tile in the VL march via the cluster grid
+     *  (default on) — UBO flags bit 4. Conservative skip: visually identical,
+     *  pure performance. */
+    public static boolean vlClusterCull = true;
 
     private LightConfig()
     {}
@@ -258,5 +262,10 @@ public final class LightConfig
     public static boolean vlDitherTemporal()
     {
         return vlDitherTemporal;
+    }
+
+    public static boolean vlClusterCull()
+    {
+        return vlClusterCull;
     }
 }

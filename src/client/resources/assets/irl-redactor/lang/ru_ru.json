@@ -75,6 +75,7 @@
     "irl-redactor.editor.vlBlueNoise": "Blue-noise дизеринг",
     "irl-redactor.editor.vlDitherTemporal": "Временная ротация дизера",
     "irl-redactor.editor.vlDitherTemporalWarn": "Без TAA может мерцать/кипеть на движущихся лампах.",
+    "irl-redactor.editor.vlClusterCull": "Кластерный отсев ламп",
     "irl-redactor.editor.vlHint": "Применяется на лету в паках с runtime-патчем VL. Скорость дрейфа кратна 0.25.",
     "irl-redactor.editor.footer": "IRLights · Все права защищены",
     "irl-redactor.editor.sourceName": "Источник %d",
