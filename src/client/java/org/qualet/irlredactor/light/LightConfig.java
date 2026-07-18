@@ -129,6 +129,11 @@ public final class LightConfig
      *  (default on) — UBO flags bit 4. Conservative skip: visually identical,
      *  pure performance. */
     public static boolean vlClusterCull = true;
+    /** Skip shadow-map taps for beam chunks provably fully lit or fully in
+     *  shadow via the spot shadow min/max pyramid (default on) — UBO flags
+     *  bit 5. Spot lights only. Conservative skip: visually identical,
+     *  pure performance. */
+    public static boolean vlShadowHiz = true;
 
     private LightConfig()
     {}
@@ -276,5 +281,10 @@ public final class LightConfig
     public static boolean vlClusterCull()
     {
         return vlClusterCull;
+    }
+
+    public static boolean vlShadowHiz()
+    {
+        return vlShadowHiz;
     }
 }

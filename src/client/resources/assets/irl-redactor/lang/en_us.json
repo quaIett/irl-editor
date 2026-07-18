@@ -77,6 +77,7 @@
     "irl-redactor.editor.vlDitherTemporal": "Temporal dither rotation",
     "irl-redactor.editor.vlDitherTemporalWarn": "May shimmer/boil on moving lamps without TAA.",
     "irl-redactor.editor.vlClusterCull": "Cluster light culling",
+    "irl-redactor.editor.vlShadowHiz": "Shadow Hi-Z skip",
     "irl-redactor.editor.vlHint": "Applies live to packs patched with runtime VL globals. Drift and morph speeds snap to 0.25.",
     "irl-redactor.editor.footer": "IRLights · All rights reserved",
     "irl-redactor.editor.sourceName": "Source %d",

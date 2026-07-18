@@ -118,7 +118,7 @@ layout(std140, binding = 7) uniform IrliteVlGlobals
 {
     vec4 irlite_vlA;   // x intensity, y maxDist, z tipBoost, w tipRadius
     vec4 irlite_vlB;   // x noiseAmount, y noiseScale, z noiseSpeed, w frameIndex (0..4095, temporal dither rotation)
-    uvec4 irlite_vlC;  // x stepMax, y shadowStride, z noiseStride, w flags (bit0 shadows, bit1 noise, bit2 blueNoise, bit3 ditherTemporal, bit4 clusterCull)
+    uvec4 irlite_vlC;  // x stepMax, y shadowStride, z noiseStride, w flags (bit0 shadows, bit1 noise, bit2 blueNoise, bit3 ditherTemporal, bit4 clusterCull, bit5 hiZSkip)
     vec4 irlite_vlD;   // x noiseMorph (0 = morph off, drift only), y/z/w reserved (written as 0)
 };
 
@@ -1381,6 +1381,11 @@ vec3 irlite_volumetric(vec3 startWorld, vec3 endWorld, vec3 worldDir, float dith
     #ifdef IRLITE_COMPILE_SHADOWS
         int vlShadowStride = clamp(int(irlite_vlC.y), 1, 8);
         bool irlite_vlShadowsOn = (irlite_vlC.w & 1u) != 0u;
+        // Phase 3b spot Hi-Z segment skip (vlC.w bit5, default ON): classify each
+        // (pixel,light) march segment ONCE against the min/max shadow pyramid and
+        // drop the per-step taps when the verdict is provable; bit off -> the
+        // segment flags stay false = exact per-step-tap parity.
+        bool irlite_vlHizOn = (irlite_vlC.w & 32u) != 0u;
     #endif
     #ifdef IRLITE_VL_NOISE
         int vlNoiseStride = clamp(int(irlite_vlC.z), 1, 8);
@@ -1508,6 +1513,90 @@ vec3 irlite_volumetric(vec3 startWorld, vec3 endWorld, vec3 worldDir, float dith
                 float c = clamp(light.cone.x, -1.0, 1.0);
                 shFY = min(c * inversesqrt(max(1.0 - c * c, 1e-12)), 114.58865);
             }
+            // Phase 3b spot Hi-Z segment skip (hoisted, once per light): project the whole
+            // [tNear,tFar] segment into the tile and test it against the coarse min/max
+            // pyramid. Verdicts are CONSERVATIVE — any guard failing leaves both flags
+            // false = the unchanged per-step tap path. segLit skips the whole shadow
+            // block (visibility stays exactly 1.0); segOcc replaces each tap with its
+            // proven 0.0 but keeps the stride cache / atten>0.01 gating byte-identical
+            // (the dim always-lit steps and the cache warm-up must keep contributing).
+            bool segLit = false;
+            bool segOcc = false;
+            #ifdef IRLITE_SHADOW_PYRAMID
+            if (irlite_vlHizOn && shHas && isSpot)
+            {
+                float shNear = 0.05;   // mirrors irlite_vlSpotStep
+                // Segment endpoints relative to the light (light -> receiver), UN-nudged.
+                // The per-step nudge 2*IRLITE_SHADOW_NORMAL_OFFSET*L is exactly radial
+                // toward the light = a scale toward the projection origin: the projected
+                // UV is IDENTICAL, only the axial distance shrinks (by <= 2*OFFSET).
+                vec3 rel0 = worldDir * tNear - lightVec;
+                vec3 rel1 = worldDir * tFar  - lightVec;
+                float dA = dot(axis, rel0);
+                float dB = dot(axis, rel1);
+                float dMin = min(dA, dB);
+                float dMax = max(dA, dB);
+                // Distance pad: worst-case nudge shrink + march FP-accumulation headroom.
+                float shDistPad = 2.0 * IRLITE_SHADOW_NORMAL_OFFSET + max(1e-3 * range, 1e-3);
+                if (dMin > shNear + shDistPad && dMax < range - shDistPad)
+                {
+                    // Whole segment strictly in front of the near plane -> its projection
+                    // is a straight NDC line -> the segment's UV AABB = the endpoint AABB.
+                    vec2 ndc0 = vec2(dot(shS, rel0), dot(shU, rel0)) * (shFY / dA);
+                    vec2 ndc1 = vec2(dot(shS, rel1), dot(shU, rel1)) * (shFY / dB);
+                    vec2 shAtlasSize = vec2(textureSize(irl_spotShadowAtlas, 0));
+                    float shTileRes = shAtlasSize.x * shTileUvSize;
+                    // uvMargin = 2 depth texels in NDC units (4/tileRes): 1 for the NEAREST
+                    // tap's containing-texel extent, 1 for pyramid base 2x2 quantization +
+                    // FP drift; the nudge contributes ZERO (projection-invariant, above).
+                    vec2 ndcAbs = max(abs(ndc0), abs(ndc1));
+                    // Second term: narrow-cone/near-apex guard — march FP drift amplified by
+                    // shFY/d must stay within the 2-texel margin, else fall back to taps.
+                    // Drift bound: <=96 adds x ulp ~ 1.2e-5*t; 1e-4*t keeps >=8x headroom
+                    // (1e-3*t over-rejected nearly all ordinary geometry — measured no-op).
+                    if (max(ndcAbs.x, ndcAbs.y) <= 1.0 - 4.0 / shTileRes && shFY * (1e-4 * tFar) / dMin <= 4.0 / shTileRes)
+                    {
+                        // Segment UV AABB -> footprint half-extent (+1 texel for the NEAREST
+                        // containing-texel), then the frozen pyramid fetch idiom (mirror of
+                        // irlite_spotShadow): clamped 2x2 at a lod whose texel covers the
+                        // full footprint, so the window is guaranteed coverage.
+                        vec2 uvA = min(ndc0, ndc1) * 0.5 + 0.5;
+                        vec2 uvB = max(ndc0, ndc1) * 0.5 + 0.5;
+                        vec2 uvC = 0.5 * (uvA + uvB);
+                        float footTex = 0.5 * max(uvB.x - uvA.x, uvB.y - uvA.y) * shTileRes + 1.0;
+                        int pyrLod = int(clamp(ceil(log2(max(footTex, 1.0))), 0.0, float(findMSB(int(shTileRes)) - 1)));
+                        int regionW = (int(shTileRes) / 2) >> pyrLod;
+                        ivec2 pixOrig = ivec2(round(shTileUvMin * shAtlasSize));
+                        ivec2 rOrig = (pixOrig >> 1) >> pyrLod;
+                        vec2 pf = uvC * float(regionW) - 0.5;
+                        ivec2 p0 = ivec2(floor(pf));
+                        ivec2 lo = clamp(p0,     ivec2(0), ivec2(regionW - 1));
+                        ivec2 hi = clamp(p0 + 1, ivec2(0), ivec2(regionW - 1));
+                        vec2 m00 = texelFetch(irl_spotShadowPyramid, rOrig + lo,                pyrLod).rg;
+                        vec2 m10 = texelFetch(irl_spotShadowPyramid, rOrig + ivec2(hi.x, lo.y), pyrLod).rg;
+                        vec2 m01 = texelFetch(irl_spotShadowPyramid, rOrig + ivec2(lo.x, hi.y), pyrLod).rg;
+                        vec2 m11 = texelFetch(irl_spotShadowPyramid, rOrig + hi,                pyrLod).rg;
+                        float pyrMin = min(min(m00.x, m10.x), min(m01.x, m11.x));
+                        float pyrMax = max(max(m00.y, m10.y), max(m01.y, m11.y));
+                        // cmp(d) = refDepth(d) - bias(d) is monotonic INCREASING in d
+                        // (refDepth grows with d, bias = C/d^2 shrinks), so evaluating it at
+                        // the pad-widened dist endpoints bounds EVERY actual nudged tap —
+                        // the depth margin is exact through the monotone map, not linearized.
+                        float dLo = dMin - shDistPad;
+                        float dHi = dMax + shDistPad;
+                        float cmpLo = (((range + shNear) - 2.0 * range * shNear / dLo) / (range - shNear)) * 0.5 + 0.5
+                                    - irlite_depthBias(IRLITE_SHADOW_BIAS, dLo, shNear, range);
+                        float cmpHi = (((range + shNear) - 2.0 * range * shNear / dHi) / (range - shNear)) * 0.5 + 0.5
+                                    - irlite_depthBias(IRLITE_SHADOW_BIAS, dHi, shNear, range);
+                        // (a) even the deepest possible tap clears the shallowest texel -> lit
+                        if (cmpHi <= pyrMin) segLit = true;
+                        // (b) even the shallowest possible tap is behind the deepest texel;
+                        // pyrMax > 0.0 guards the unbound/failed-pyramid case (fetches (0,0))
+                        else if (cmpLo > pyrMax && pyrMax > 0.0) segOcc = true;
+                    }
+                }
+            }
+            #endif
         #endif
 
         float transmittance = 1.0;
@@ -1554,15 +1643,20 @@ vec3 irlite_volumetric(vec3 startWorld, vec3 endWorld, vec3 worldDir, float dith
             // Per-step occlusion: hard depth tap for god-rays; skipped if no baked map.
             float visibility = 1.0;
             #ifdef IRLITE_COMPILE_SHADOWS
-                if (shHas && atten > 0.01)
+                // segLit skips the whole block: visibility stays exactly 1.0 and shadowVis
+                // is never touched — identical to every tap returning 1.0 (proven by Hi-Z).
+                if (shHas && !segLit && atten > 0.01)
                 {
                     // Tap every vlShadowStride steps, reuse cached visibility between (1 = every step).
                     if (s % vlShadowStride == 0)
                     {
-                        shadowVis = isSpot
-                            ? irlite_vlSpotStep(2.0 * IRLITE_SHADOW_NORMAL_OFFSET * L - toLight,
-                                                shS, shU, axis, shFY, range, shTileUvMin, shTileUvSize)
-                            : irlite_vlPointStep(toLight, dist, range, shTile);
+                        // segOcc replaces the tap with its proven result 0.0 (no fetch); the
+                        // stride cache + its warm-up semantics stay byte-identical.
+                        shadowVis = segOcc ? 0.0
+                                  : isSpot
+                                      ? irlite_vlSpotStep(2.0 * IRLITE_SHADOW_NORMAL_OFFSET * L - toLight,
+                                                          shS, shU, axis, shFY, range, shTileUvMin, shTileUvSize)
+                                      : irlite_vlPointStep(toLight, dist, range, shTile);
                     }
                     visibility = shadowVis;
                 }

@@ -62,7 +62,7 @@ public final class LightDriver
             LightConfig.vlNoiseStride(),
             (LightConfig.vlShadows() ? 1 : 0) | (LightConfig.vlNoise() ? 2 : 0)
                 | (LightConfig.vlBlueNoise() ? 4 : 0) | (LightConfig.vlDitherTemporal() ? 8 : 0)
-                | (LightConfig.vlClusterCull() ? 16 : 0));
+                | (LightConfig.vlClusterCull() ? 16 : 0) | (LightConfig.vlShadowHiz() ? 32 : 0));
 
         if (world == null || cameraPos == null)
         {
