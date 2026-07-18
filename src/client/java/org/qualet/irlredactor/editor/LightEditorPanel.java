@@ -88,10 +88,7 @@ public class LightEditorPanel
     private final float[]   cfgVlNoiseSpeed   = { LightConfig.vlNoiseSpeed };
     private final float[]   cfgVlNoiseMorph   = { LightConfig.vlNoiseMorph };
     private final float[]   cfgVlNoiseStride  = { LightConfig.vlNoiseStride };
-    private final ImBoolean cfgVlBlueNoise      = new ImBoolean(LightConfig.vlBlueNoise);
     private final ImBoolean cfgVlDitherTemporal = new ImBoolean(LightConfig.vlDitherTemporal);
-    private final ImBoolean cfgVlClusterCull    = new ImBoolean(LightConfig.vlClusterCull);
-    private final ImBoolean cfgVlShadowHiz      = new ImBoolean(LightConfig.vlShadowHiz);
 
     /** Experimental-feature warning popup id. */
     private static final String WARN_POPUP_ID = "##irl_auto_warn";
@@ -743,9 +740,6 @@ public class LightEditorPanel
         LightConfig.vlNoiseStride = Math.round(cfgVlNoiseStride[0]);
         ImGui.endDisabled();
 
-        Widgets.toggleRow("cfg_vlbluenoise", Lang.t("irl-redactor.editor.vlBlueNoise"), cfgVlBlueNoise);
-        LightConfig.vlBlueNoise = cfgVlBlueNoise.get();
-
         Widgets.toggleRow("cfg_vldithertemporal", Lang.t("irl-redactor.editor.vlDitherTemporal"), cfgVlDitherTemporal);
         LightConfig.vlDitherTemporal = cfgVlDitherTemporal.get();
 
@@ -753,12 +747,6 @@ public class LightEditorPanel
         {
             Widgets.textDisabled(Lang.t("irl-redactor.editor.vlDitherTemporalWarn"));
         }
-
-        Widgets.toggleRow("cfg_vlclustercull", Lang.t("irl-redactor.editor.vlClusterCull"), cfgVlClusterCull);
-        LightConfig.vlClusterCull = cfgVlClusterCull.get();
-
-        Widgets.toggleRow("cfg_vlshadowhiz", Lang.t("irl-redactor.editor.vlShadowHiz"), cfgVlShadowHiz);
-        LightConfig.vlShadowHiz = cfgVlShadowHiz.get();
 
         Widgets.textDisabled(Lang.t("irl-redactor.editor.vlHint"));
     }
