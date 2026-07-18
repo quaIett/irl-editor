@@ -113,10 +113,11 @@ public final class LightConfig
      *  wind is whole field-periods per its 3600 s time wrap, so in-between values
      *  would make the fog pop on the wrap (the core setter quantizes too). */
     public static float vlNoiseSpeed = 0.25f;
-    /** How fast the noise puffs reshape (crossfade morph), 0..3 (default 1.0);
-     *  0 = classic drifting-only fog. Kept a multiple of 0.25 for the same
-     *  3600 s time-wrap reason as the drift speed (the core setter quantizes too). */
-    public static float vlNoiseMorph = 1.0f;
+    /** How fast the noise puffs reshape (crossfade morph), 0..3 (default 0 = off;
+     *  enabling costs a second noise tap per refresh — measured pricier than the
+     *  noise itself). 0 = classic drifting-only fog. Kept a multiple of 0.25 for
+     *  the same 3600 s time-wrap reason as the drift speed (core quantizes too). */
+    public static float vlNoiseMorph = 0f;
     /** Sample the density noise every Nth march step (default 2; 1 = every step). */
     public static int vlNoiseStride = 2;
     /** Blue-noise dither of the VL march start instead of the pack's white-ish
