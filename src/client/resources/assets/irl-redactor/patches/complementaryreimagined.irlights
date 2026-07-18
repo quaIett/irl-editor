@@ -118,8 +118,8 @@ layout(std140, binding = 7) uniform IrliteVlGlobals
 {
     vec4 irlite_vlA;   // x intensity, y maxDist, z tipBoost, w tipRadius
     vec4 irlite_vlB;   // x noiseAmount, y noiseScale, z noiseSpeed, w frameIndex (0..4095, temporal dither rotation)
-    uvec4 irlite_vlC;  // x stepMax, y shadowStride, z noiseStride, w flags (bit0 shadows, bit1 noise, bit2 blueNoise, bit3 ditherTemporal, bit4 clusterCull, bit5 hiZSkip)
-    vec4 irlite_vlD;   // x noiseMorph (0 = morph off, drift only), y/z/w reserved (written as 0)
+    uvec4 irlite_vlC;  // x stepMax, y shadowStride, z noiseStride, w flags (bit0 shadows, bit1 noise, bit2 blueNoise, bit3 ditherTemporal, bit4 clusterCull, bit5 hiZSkip, bit6 bilateralUpsample)
+    vec4 irlite_vlD;   // x noiseMorph (0 = morph off, drift only), y bilateral depth sigma in blocks (0 = default), z/w reserved (written as 0)
 };
 
 // ---- cluster grid (binding 6) — std430 mirror of ClusterGridBuffer.java; per-fragment screen-tile light mask ----
@@ -1732,8 +1732,9 @@ screen (size.buffer.colortex10 = IRLITE_VL_RESOLUTION, the pack's own
 REFLECTION_RES mechanism). The pass viewport shrinks with its only render
 target, so every covered pixel's ray march costs a quarter (Half) or a
 sixteenth (Quarter) of the full-res price — the same mechanism Photon uses
-for its quarter-res fog pass. program/composite1.glsl then bilinear-upsamples
-the buffer, applies the underwater/lava parity and adds it to color.
+for its quarter-res fog pass. program/composite1.glsl then upsamples the buffer
+(depth-aware bilateral when UBO flags bit6 is set - the default - plain bilinear
+otherwise), applies the underwater/lava parity and adds it to color.
 Runs at the deferred stage (after solid gbuffers): depthtex0 holds the OPAQUE
 depth there, which is exactly the march end the composite1-hosted march used
 (z1) — beams deliberately continue behind translucents/BBS replay models.
@@ -1955,8 +1956,42 @@ after "    color = pow(color, vec3(2.2));"
 <<<
 
     #if defined IRLITE_ACTIVE && defined IRLITE_VOLUMETRIC
-        // IRLite VL: reduced-res deferred2 -> colortex10, bilinear-upsampled here in LINEAR space.
-        vec3 irliteVL = texture2D(colortex10, texCoord).rgb;
+        // IRLite VL: reduced-res deferred2 -> colortex10, upsampled here in LINEAR space.
+        // vlC.w bit6 = depth-aware bilateral: 4 low-res texel centers, bilinear weight x
+        // view-depth weight against depthtex1 (deferred2 marched the opaque depth) - kills
+        // halos/staircase on silhouettes at RESOLUTION < 1. The +0.25 fetch bias steps off
+        // the exact pixel corner the texel-center uv lands on at half/quarter res (float
+        // rounding would flip the picked pixel per column); at full res floor(t+0.75) = t.
+        // Depth metric = true view-space Z in blocks, nf/(f - z(f-n)): the pack's
+        // GetLinearDepth*far is 2df/(d+f), which would stretch sigma 0.5x-2x over distance.
+        vec3 irliteVL;
+        if ((irlite_vlC.w & 64u) != 0u) {
+            ivec2 irliteVlSize = textureSize(colortex10, 0);
+            vec2 irliteVlPos = texCoord * vec2(irliteVlSize) - 0.5;
+            vec2 irliteVlBase = floor(irliteVlPos);
+            vec2 irliteVlFrac = irliteVlPos - irliteVlBase;
+            float irliteRefDepth = (near * far) / (far - z1 * (far - near));
+            float irliteSigma = irlite_vlD.y > 0.0 ? irlite_vlD.y : 1.5; // blocks (vlD.y 0 = default)
+            vec3 irliteVlSum = vec3(0.0);
+            float irliteVlWSum = 0.0;
+            for (int i = 0; i < 4; i++) {
+                ivec2 irliteTap = ivec2(i & 1, i >> 1);
+                ivec2 irliteTexel = clamp(ivec2(irliteVlBase) + irliteTap, ivec2(0), irliteVlSize - 1);
+                vec2 irliteTapUv = (vec2(irliteTexel) + 0.5) / vec2(irliteVlSize);
+                float irliteTapZ = texelFetch(depthtex1, ivec2(irliteTapUv * view + 0.25), 0).r;
+                float irliteTapLin = (near * far) / (far - irliteTapZ * (far - near));
+                float irliteDz = abs(irliteTapLin - irliteRefDepth) / irliteSigma;
+                vec2 irliteBi = mix(1.0 - irliteVlFrac, irliteVlFrac, vec2(irliteTap));
+                float irliteW = irliteBi.x * irliteBi.y / (1.0 + irliteDz * irliteDz);
+                irliteVlSum += texelFetch(colortex10, irliteTexel, 0).rgb * irliteW;
+                irliteVlWSum += irliteW;
+            }
+            // Sub-tap geometry (fences/leaves): no tap depth matches -> plain bilinear beats
+            // a normalized mush of 4 wrong-surface taps.
+            irliteVL = irliteVlWSum > 1e-3 ? irliteVlSum / irliteVlWSum : texture2D(colortex10, texCoord).rgb;
+        } else {
+            irliteVL = texture2D(colortex10, texCoord).rgb;
+        }
         if (isEyeInWater == 1) {
             vec3 irliteUWM = vec3(0.80, 0.87, 0.97) * 0.55;
             irliteVL *= irliteUWM * irliteUWM;
