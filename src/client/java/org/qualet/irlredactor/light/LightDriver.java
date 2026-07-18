@@ -56,6 +56,7 @@ public final class LightDriver
             LightConfig.vlNoiseAmount(),
             LightConfig.vlNoiseScale(),
             LightConfig.vlNoiseSpeed(),
+            LightConfig.vlNoiseMorph(),
             LightConfig.vlSteps(),
             LightConfig.vlShadowStride(),
             LightConfig.vlNoiseStride(),

@@ -119,6 +119,7 @@ layout(std140, binding = 7) uniform IrliteVlGlobals
     vec4 irlite_vlA;   // x intensity, y maxDist, z tipBoost, w tipRadius
     vec4 irlite_vlB;   // x noiseAmount, y noiseScale, z noiseSpeed, w frameIndex (0..4095, temporal dither rotation)
     uvec4 irlite_vlC;  // x stepMax, y shadowStride, z noiseStride, w flags (bit0 shadows, bit1 noise, bit2 blueNoise, bit3 ditherTemporal, bit4 clusterCull)
+    vec4 irlite_vlD;   // x noiseMorph (0 = morph off, drift only), y/z/w reserved (written as 0)
 };
 
 // ---- cluster grid (binding 6) — std430 mirror of ClusterGridBuffer.java; per-fragment screen-tile light mask ----
@@ -1218,6 +1219,19 @@ float irlite_vlNoise(vec3 worldP, float w2)
     return (1.0 - w2) * Noise3D(p + wind)
          + w2 * Noise3D(p * 2.53 + wind * 2.0 + vec3(0.31, 0.53, 0.47));
 }
+
+// Time-morph slice offset (vlD.x): deterministic pseudo-random world-space offset for wrapped
+// slice index k (0..899). Integer hash -> 3 decorrelated [0,1) lanes, scaled to 4 whole noise
+// periods (the divide by 128*noiseScale above cancels the irlite_vlB.y factor here), so the two
+// crossfaded fields stay decorrelated at any noise scale. Called twice per invocation (k, k+1)
+// from the hoist in irlite_volumetric — never inside the march loop.
+vec3 irlite_vlMorphOff(uint k)
+{
+    uint h = k * 747796405u + 2891336453u;
+    h = (h ^ (h >> 16u)) * 2246822519u;
+    h = h ^ (h >> 13u);
+    return vec3(h * uvec3(0x8DA6B343u, 0xD8163841u, 0xCB1AB31Fu)) * (2.3283064365e-10 * 512.0 * irlite_vlB.y);
+}
 #endif
 
 // Ray vs finite cone intersection; returns [near, far] t-interval or vec2(-1) on miss.
@@ -1371,6 +1385,24 @@ vec3 irlite_volumetric(vec3 startWorld, vec3 endWorld, vec3 worldDir, float dith
     #ifdef IRLITE_VL_NOISE
         int vlNoiseStride = clamp(int(irlite_vlC.z), 1, 8);
         bool irlite_vlNoiseOn = (irlite_vlC.w & 2u) != 0u;
+        // Time-morph (vlD.x, runtime): crossfade between two wind-advected slices of the same
+        // field so the puffs RESHAPE instead of only sliding; drift and morph compose. 900-slice
+        // cycle: the speed is quantized to 0.25 steps (VlGlobalsBuffer), so 3600 * speed is always
+        // a multiple of 900 and the hourly frameTimeCounter wrap lands slice-congruent with a
+        // continuous fract — no pop. Both slice offsets are hoisted here, never per step.
+        float vlMorphSpeed = irlite_vlD.x;
+        bool irlite_vlMorphOn = vlMorphSpeed > 0.0;
+        float vlMorphF = 0.0;
+        vec3 vlMorphOff0 = vec3(0.0);
+        vec3 vlMorphOff1 = vec3(0.0);
+        if (irlite_vlMorphOn)
+        {
+            float vlMorphPhase = frameTimeCounter * vlMorphSpeed;
+            uint vlMorphK = uint(vlMorphPhase) % 900u;
+            vlMorphF = fract(vlMorphPhase);
+            vlMorphOff0 = irlite_vlMorphOff(vlMorphK);
+            vlMorphOff1 = irlite_vlMorphOff((vlMorphK + 1u) % 900u);
+        }
     #endif
 
     vec3 result = vec3(0.0);
@@ -1545,7 +1577,18 @@ vec3 irlite_volumetric(vec3 startWorld, vec3 endWorld, vec3 worldDir, float dith
                     // Tap every vlNoiseStride steps, reuse the cached value between (1 = every step).
                     if (s % vlNoiseStride == 0)
                     {
-                        noiseVal = irlite_vlNoise(startWorld + pos, noiseW2);
+                        if (irlite_vlMorphOn)
+                        {
+                            // Two taps of the same field at the hoisted slice offsets: the mix of
+                            // two same-mean fields keeps mean ~0.5, so beam brightness is preserved.
+                            noiseVal = mix(irlite_vlNoise(startWorld + pos + vlMorphOff0, noiseW2),
+                                           irlite_vlNoise(startWorld + pos + vlMorphOff1, noiseW2),
+                                           vlMorphF);
+                        }
+                        else
+                        {
+                            noiseVal = irlite_vlNoise(startWorld + pos, noiseW2);
+                        }
                     }
                     inscatter *= mix(1.0, 2.0 * noiseVal, irlite_vlB.x);
                 }

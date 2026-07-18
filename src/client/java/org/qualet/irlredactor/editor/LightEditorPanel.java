@@ -86,6 +86,7 @@ public class LightEditorPanel
     private final float[]   cfgVlNoiseAmount  = { LightConfig.vlNoiseAmount };
     private final float[]   cfgVlNoiseScale   = { LightConfig.vlNoiseScale };
     private final float[]   cfgVlNoiseSpeed   = { LightConfig.vlNoiseSpeed };
+    private final float[]   cfgVlNoiseMorph   = { LightConfig.vlNoiseMorph };
     private final float[]   cfgVlNoiseStride  = { LightConfig.vlNoiseStride };
     private final ImBoolean cfgVlBlueNoise      = new ImBoolean(LightConfig.vlBlueNoise);
     private final ImBoolean cfgVlDitherTemporal = new ImBoolean(LightConfig.vlDitherTemporal);
@@ -729,6 +730,13 @@ public class LightEditorPanel
         Widgets.trackpad("cfg_vlnoisespeed", Lang.t("irl-redactor.editor.vlNoiseSpeed"), cfgVlNoiseSpeed, 0f, 3f, "%.2f");
         cfgVlNoiseSpeed[0] = Math.round(cfgVlNoiseSpeed[0] * 4f) / 4f;
         LightConfig.vlNoiseSpeed = cfgVlNoiseSpeed[0];
+
+        // Same 0.25 snap as the drift speed: the morph phase must complete whole
+        // slice-periods per the shader's 3600 s time wrap, or the crossfade pops
+        // on the wrap (the core setter quantizes as well — this is honest UI).
+        Widgets.trackpad("cfg_vlnoisemorph", Lang.t("irl-redactor.editor.vlNoiseMorph"), cfgVlNoiseMorph, 0f, 3f, "%.2f");
+        cfgVlNoiseMorph[0] = Math.round(cfgVlNoiseMorph[0] * 4f) / 4f;
+        LightConfig.vlNoiseMorph = cfgVlNoiseMorph[0];
 
         Widgets.trackpad("cfg_vlnoisestride", Lang.t("irl-redactor.editor.vlNoiseStride"), cfgVlNoiseStride, 1f, 4f, "%.0f");
         LightConfig.vlNoiseStride = Math.round(cfgVlNoiseStride[0]);
