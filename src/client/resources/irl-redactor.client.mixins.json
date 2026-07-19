@@ -9,6 +9,7 @@
     "MouseImGuiMixin",
     "KeyboardImGuiMixin",
     "WorldBlockChangeMixin",
+    "iris.CompositeRendererTimerMixin",
     "iris.ProgramSamplersBuilderMixin",
     "iris.SamplerBindingCubeArrayMixin"
   ],

@@ -14,6 +14,7 @@ import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.qualet.irl.light.LightMath;
+import org.qualet.irlredactor.client.diag.VlProfiler;
 import org.qualet.irlredactor.light.LightConfig;
 import org.qualet.irlredactor.light.LightScene;
 import org.qualet.irlredactor.light.PlacedLight;
@@ -59,6 +60,14 @@ public class LightEditorPanel
 
     /** Cached cookie file list for the gobo picker; null = needs a (re)scan. */
     private String[] cookieFiles;
+
+    // Perf-section mirrors. Resynced from the source of truth every frame before
+    // drawing (unlike the one-directional cfg* mirrors below): holdBake is also
+    // flipped outside the panel (world-join arm, "bake now" button), and the
+    // profiler pre-arm flag may have set collection at boot.
+    private final ImBoolean cfgPerfProfiler = new ImBoolean(false);
+    private final ImBoolean cfgHoldBake = new ImBoolean(false);
+    private final ImBoolean cfgHoldOnJoin = new ImBoolean(LightConfig.holdBakeOnJoin);
 
     // Engine-settings mirrors (LightConfig is plain static fields; toggles need ImBoolean).
     private final ImBoolean cfgCache  = new ImBoolean(LightConfig.shadowCache);
@@ -154,6 +163,7 @@ public class LightEditorPanel
             ImGui.separator();
             engineGroup();
             vlGroup();
+            perfGroup();
 
             ImGui.separator();
             Widgets.textDisabled(Lang.t("irl-redactor.editor.footer"));
@@ -670,6 +680,45 @@ public class LightEditorPanel
         if (Widgets.button("open_patcher", Lang.t("irl-redactor.patcher.title"), ImGui.getContentRegionAvail().x, false))
         {
             patcher.open();
+        }
+    }
+
+    // ---- performance (dev profiler + deferred initial bake) ----------------
+
+    /** GPU profiler toggle + deferred-bake controls. Both flags are owned by
+     *  other classes and can change outside this panel (profiler pre-arm -D
+     *  flag, world-join hold arm), so the ImBoolean mirrors resync from the
+     *  source of truth before drawing instead of the one-directional cfg*
+     *  pattern the other groups use. */
+    private void perfGroup()
+    {
+        if (!Widgets.collapsingHeader("perf", Lang.t("irl-redactor.editor.perf"), false))
+        {
+            return;
+        }
+
+        cfgPerfProfiler.set(VlProfiler.isCollecting());
+        Widgets.toggleRow("cfg_perf_profiler", Lang.t("irl-redactor.editor.perfProfiler"), cfgPerfProfiler);
+        VlProfiler.setCollecting(cfgPerfProfiler.get());
+
+        ImGui.dummy(0f, 4f);
+
+        cfgHoldBake.set(LightConfig.holdBake);
+        Widgets.toggleRow("cfg_perf_hold", Lang.t("irl-redactor.editor.holdBake"), cfgHoldBake);
+        LightConfig.holdBake = cfgHoldBake.get();
+
+        cfgHoldOnJoin.set(LightConfig.holdBakeOnJoin);
+        Widgets.toggleRow("cfg_perf_holdjoin", Lang.t("irl-redactor.editor.holdBakeOnJoin"), cfgHoldOnJoin);
+        LightConfig.holdBakeOnJoin = cfgHoldOnJoin.get();
+
+        if (LightConfig.holdBake)
+        {
+            Widgets.textDisabled(Lang.t("irl-redactor.editor.holdActive"));
+            if (Widgets.primaryButton("perf_bake_now", Lang.t("irl-redactor.editor.bakeNow"),
+                ImGui.getContentRegionAvail().x))
+            {
+                LightConfig.holdBake = false;
+            }
         }
     }
 

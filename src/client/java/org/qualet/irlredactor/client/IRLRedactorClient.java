@@ -5,6 +5,7 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ServerInfo;
 import net.minecraft.client.option.KeyBinding;
@@ -15,8 +16,10 @@ import org.lwjgl.glfw.GLFW;
 import org.lwjgl.opengl.GL30;
 import org.qualet.irl.light.IrlSamplers;
 import org.qualet.irl.light.shadow.RedactorEntityCasterSource;
+import org.qualet.irl.light.shadow.ShadowBakeProbe;
 import org.qualet.irl.light.shadow.ShadowEngine;
 import org.qualet.irl.patcher.Patcher;
+import org.qualet.irlredactor.client.diag.VlProfiler;
 import org.qualet.irlredactor.editor.LightEditorScreen;
 import org.qualet.irlredactor.imgui.ImGuiRuntime;
 import org.qualet.irlredactor.patcher.RedactorPatcherHost;
@@ -56,6 +59,25 @@ public class IRLRedactorClient implements ClientModInitializer
         // dir / Iris shaderpacks dir / bundled .irlights (matches the IRLite wiring).
         Patcher.install(new RedactorPatcherHost());
 
+        // Dev GPU profiler (editor "perf" section): wire the core-side bake probe
+        // and the HUD overlay unconditionally — every call is a cheap no-op until
+        // the user flips the runtime toggle (VlProfiler.setCollecting).
+        HudRenderCallback.EVENT.register((ctx, tickDelta) -> VlProfiler.renderHud(ctx));
+        ShadowEngine.installBakeProbe(new ShadowBakeProbe()
+        {
+            @Override
+            public void section(String name)
+            {
+                VlProfiler.switchPass(name);
+            }
+
+            @Override
+            public void counter(String key, int amount)
+            {
+                VlProfiler.counter(key, amount);
+            }
+        });
+
         // Install the shadow caster source (vanilla entity dispatcher) + config so the
         // shared irl-core shadow orchestration can reach this mod's per-mod pieces.
         ShadowEngine.install(new RedactorEntityCasterSource(), LightConfig.SHADOW);
@@ -81,6 +103,10 @@ public class IRLRedactorClient implements ClientModInitializer
         {
             currentWorldKey = worldKey(client);
             LightStore.load(currentWorldKey);
+            // Deferred initial bake: entering a world must not fire the cold-start
+            // bake by itself — lights render shadowless until the editor's
+            // "bake now" button clears the hold (perf section; see LightConfig).
+            LightConfig.holdBake = LightConfig.holdBakeOnJoin;
         });
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) ->
         {

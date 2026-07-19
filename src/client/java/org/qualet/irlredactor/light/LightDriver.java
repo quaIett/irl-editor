@@ -145,7 +145,7 @@ public final class LightDriver
             l.intensity, l.radius,
             l.entitiesOnly, l.blocksOnly,
             l.anisotropy, l.vlDensity, l.beamStrength, l.bulbSize,
-            l.shadows, l.id);
+            l.shadows && !LightConfig.holdBake, l.id);
     }
 
     private static void emitSpot(PlacedLight l)
@@ -171,7 +171,7 @@ public final class LightDriver
             l.intensity, l.range, cosOuter, cosInner,
             l.entitiesOnly, l.blocksOnly,
             l.anisotropy, l.vlDensity, l.beamStrength, l.bulbSize,
-            l.shadows,
+            l.shadows && !LightConfig.holdBake,
             (float) cookieLayer, l.cookieRotation, l.cookieScale, cookieFlags,
             l.id);
     }

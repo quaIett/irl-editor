@@ -23,6 +23,20 @@ public final class LightConfig
 
     /** Draw in-world wireframe gizmos for placed lights (default off). */
     public static boolean showGuides = false;
+
+    // --- Deferred initial shadow bake (editor "perf" section) -----------------
+    /** While true, every light is fed to the engine with shadows OFF: lamps
+     *  upload and render (shadowless, tile -1 — the GLSL early-outs before any
+     *  atlas fetch), and the baker skips them before any tile/cache state is
+     *  touched. Clearing the flag lets each lamp hit the normal first-bake
+     *  path next frame (no manual invalidation needed — lastTile never saw
+     *  them). Per-lamp {@code PlacedLight.shadows} is NOT mutated, so the
+     *  user's own toggles survive the hold. */
+    public static volatile boolean holdBake = false;
+    /** Arm {@link #holdBake} on every world join (JOIN handler), so entering a
+     *  world never fires the initial cold-start bake by itself — the editor's
+     *  "bake now" button releases it when the user is ready to measure. */
+    public static boolean holdBakeOnJoin = true;
     /** Shadow resolution preset ordinal (0 LOW .. 3 ULTRA), default 1 (MEDIUM). */
     public static int shadowQuality = 1;
     /** When on, shadow maps are only re-baked when the scene changes (default on). */
