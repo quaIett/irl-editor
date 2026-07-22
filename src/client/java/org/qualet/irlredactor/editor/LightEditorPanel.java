@@ -8,6 +8,7 @@ import imgui.flag.ImGuiColorEditFlags;
 import imgui.flag.ImGuiCond;
 import imgui.flag.ImGuiWindowFlags;
 import imgui.type.ImBoolean;
+import imgui.type.ImString;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.Camera;
 import net.minecraft.util.math.Vec3d;
@@ -24,13 +25,13 @@ import org.qualet.irlredactor.light.cookie.CookieArray;
 import java.util.List;
 
 /**
- * Builds the light-editor panel in immediate mode, mirroring the layout of the
- * HTML prototype with a BBS / vanilla-Minecraft look. Now wired to the live
- * pipeline: it manages the {@link LightScene} (add / duplicate / delete / select)
- * and edits the selected {@link PlacedLight} through the {@link LightState} buffer.
+ * Builds the light-editor panel in immediate mode with the new two-area layout:
+ * a left-docked panel (sources + the selected light's inspector) plus a separate
+ * movable "Settings" window on the right holding the global engine settings,
+ * grouped into a category nav.
  *
  * <p>Per-frame flow: draw the source list (may change the selection), {@link
- * #syncSelection() pull} on a selection change, draw the editor groups bound to
+ * #syncSelection() pull} on a selection change, draw the inspector groups bound to
  * {@link #state}, then {@link LightSync#push push} the buffer back into the
  * selected light. The driver reads the scene each frame, so edits are live.</p>
  */
@@ -48,7 +49,7 @@ public class LightEditorPanel
     private static final float LIST_ROW_H = 28f;
     private static final int LIST_VISIBLE_ROWS = 6;
 
-    /** Shader-patcher popup (visual prototype; opened from the engine settings). */
+    /** Shader-patcher popup (visual prototype; opened from the settings window). */
     private final PatcherPanel patcher = new PatcherPanel();
 
     /** ImGui scratch mirrored to/from the selected light. */
@@ -60,6 +61,22 @@ public class LightEditorPanel
 
     /** Cached cookie file list for the gobo picker; null = needs a (re)scan. */
     private String[] cookieFiles;
+
+    // ---- settings window (right, movable) ---------------------------------
+    private static final float SETTINGS_W = 600f;
+    private static final int CAT_PRESETS = 0;
+    private static final int CAT_VOLUMETRIC = 1;
+    private static final int CAT_SHADOWS = 2;
+    private static final int CAT_OUTLINE = 3;
+    private static final int CAT_AUTO = 4;
+    private static final int CAT_PATCHER = 5;
+    /** Whether the floating settings window is shown (toggled from the left panel,
+     *  closed via its own title-bar [x] through this same flag). */
+    private final ImBoolean settingsOpen = new ImBoolean(false);
+    /** Active settings category (one of the CAT_* constants). */
+    private int settingsCat = CAT_PRESETS;
+    /** Settings search box buffer (filtering wired up in a later step). */
+    private final ImString settingsSearch = new ImString(64);
 
     // Perf-section mirrors. Resynced from the source of truth every frame before
     // drawing (unlike the one-directional cfg* mirrors below): holdBake is also
@@ -128,7 +145,9 @@ public class LightEditorPanel
         float w = ImGui.getIO().getDisplaySizeX();
         float h = ImGui.getIO().getDisplaySizeY();
 
-        ImGui.setNextWindowPos(w - PANEL_W, 0f);
+        // Left-docked panel: sources + the selected light's inspector. Global
+        // engine settings live in the separate movable window (drawSettingsWindow).
+        ImGui.setNextWindowPos(0f, 0f);
         ImGui.setNextWindowSize(PANEL_W, h);
 
         int flags = ImGuiWindowFlags.NoMove
@@ -160,16 +179,26 @@ public class LightEditorPanel
                 shadowGroup();
             }
 
+            // "Settings" opener + footer, pinned to the bottom of the panel.
+            float footerH = ImGui.getFrameHeightWithSpacing() + ImGui.getTextLineHeightWithSpacing() + 14f;
+            float targetY = h - footerH;
+            if (targetY > ImGui.getCursorPosY())
+            {
+                ImGui.setCursorPosY(targetY);
+            }
             ImGui.separator();
-            engineGroup();
-            vlGroup();
-            perfGroup();
-
-            ImGui.separator();
+            if (Widgets.button("open_settings", Lang.t("irl-redactor.editor.openSettings"),
+                ImGui.getContentRegionAvail().x, settingsOpen.get()))
+            {
+                settingsOpen.set(!settingsOpen.get());
+            }
             Widgets.textDisabled(Lang.t("irl-redactor.editor.footer"));
         }
 
         ImGui.end();
+
+        // Global settings, in a separate movable window on the right.
+        drawSettingsWindow(w, h);
 
         // The move gizmo is drawn over the world (background draw list, so it sits
         // behind the panel) and may update state.pos; push commits everything —
@@ -180,8 +209,8 @@ public class LightEditorPanel
             LightSync.push(state, selected);
         }
 
-        // Rendered at the root (after the panel's end) so the modal sits on top
-        // of the panel and dims the world behind it.
+        // Rendered at the root (after the panel's end) so the modals sit on top
+        // of the panel and dim the world behind them.
         patcher.draw();
         drawExperimentalWarning();
     }
@@ -252,7 +281,7 @@ public class LightEditorPanel
         // Mutations above happen outside iteration; here we only read + capture a
         // click, applying the selection change after the loop (no CME). The rows
         // live in a fixed-height scroll region so a long list never pushes the
-        // editor groups off-screen.
+        // inspector off-screen.
         PlacedLight toSelect = null;
         List<PlacedLight> all = LightScene.all();
         if (!all.isEmpty())
@@ -595,15 +624,106 @@ public class LightEditorPanel
         }
     }
 
-    // ---- engine settings (Phase D) ----------------------------------------
+    // ---- settings window (right, movable) ---------------------------------
 
-    private void engineGroup()
+    /** The floating global-settings window: a normal, movable ImGui window with a
+     *  category nav on the left and the selected category's controls on the right.
+     *  Opened from the left panel's "Settings" button, closed via its title-bar
+     *  [x] (both routed through {@link #settingsOpen}). */
+    private void drawSettingsWindow(float w, float h)
     {
-        if (!Widgets.collapsingHeader("engine", Lang.t("irl-redactor.editor.engine"), false))
+        if (!settingsOpen.get())
         {
             return;
         }
 
+        ImGui.setNextWindowPos(w - SETTINGS_W - 16f, 16f, ImGuiCond.FirstUseEver);
+        ImGui.setNextWindowSize(SETTINGS_W, Math.min(520f, h - 32f), ImGuiCond.FirstUseEver);
+
+        if (ImGui.begin(Lang.t("irl-redactor.editor.settingsTitle"), settingsOpen, ImGuiWindowFlags.NoCollapse))
+        {
+            if (ImGui.beginChild("##set_nav", 150f, 0f, true))
+            {
+                ImGui.setNextItemWidth(-1f);
+                ImGui.inputTextWithHint("##set_search", Lang.t("irl-redactor.editor.searchHint"), settingsSearch);
+                ImGui.dummy(0f, 4f);
+                settingsNavItem(CAT_PRESETS, "irl-redactor.editor.cat.presets");
+                settingsNavItem(CAT_VOLUMETRIC, "irl-redactor.editor.cat.volumetric");
+                settingsNavItem(CAT_SHADOWS, "irl-redactor.editor.cat.shadows");
+                settingsNavItem(CAT_OUTLINE, "irl-redactor.editor.cat.outline");
+                settingsNavItem(CAT_AUTO, "irl-redactor.editor.cat.auto");
+                settingsNavItem(CAT_PATCHER, "irl-redactor.editor.cat.patcher");
+            }
+            ImGui.endChild();
+
+            ImGui.sameLine();
+
+            if (ImGui.beginChild("##set_content", 0f, 0f, false))
+            {
+                switch (settingsCat)
+                {
+                    case CAT_VOLUMETRIC -> volumetricCategory();
+                    case CAT_SHADOWS -> shadowsCategory();
+                    case CAT_OUTLINE -> Widgets.textDisabledWrapped(Lang.t("irl-redactor.editor.outlineSoon"));
+                    case CAT_AUTO -> autoCategory();
+                    case CAT_PATCHER -> patcherCategory();
+                    default -> presetsCategory();
+                }
+            }
+            ImGui.endChild();
+        }
+        ImGui.end();
+    }
+
+    private void settingsNavItem(int cat, String labelKey)
+    {
+        if (Widgets.selectable("set_nav_" + cat, Lang.t(labelKey), null, settingsCat == cat))
+        {
+            settingsCat = cat;
+        }
+    }
+
+    // ---- settings categories ----------------------------------------------
+
+    /** Presets: the loose global knobs + the dev profiler / deferred-bake controls.
+     *  (The profiler + hold-bake flags are owned elsewhere and can change outside
+     *  this panel, so their mirrors resync from the source of truth each frame.) */
+    private void presetsCategory()
+    {
+        Widgets.trackpad("cfg_vlintensity", Lang.t("irl-redactor.editor.vlIntensity"), cfgVlIntensity, 0f, 5f, "%.2f");
+        LightConfig.vlIntensity = cfgVlIntensity[0];
+
+        Widgets.toggleRow("cfg_guides", Lang.t("irl-redactor.editor.showGuides"), cfgGuides);
+        LightConfig.showGuides = cfgGuides.get();
+
+        ImGui.dummy(0f, 6f);
+        Widgets.textDisabled(Lang.t("irl-redactor.editor.perf"));
+
+        cfgPerfProfiler.set(VlProfiler.isCollecting());
+        Widgets.toggleRow("cfg_perf_profiler", Lang.t("irl-redactor.editor.perfProfiler"), cfgPerfProfiler);
+        VlProfiler.setCollecting(cfgPerfProfiler.get());
+
+        cfgHoldBake.set(LightConfig.holdBake);
+        Widgets.toggleRow("cfg_perf_hold", Lang.t("irl-redactor.editor.holdBake"), cfgHoldBake);
+        LightConfig.holdBake = cfgHoldBake.get();
+
+        cfgHoldOnJoin.set(LightConfig.holdBakeOnJoin);
+        Widgets.toggleRow("cfg_perf_holdjoin", Lang.t("irl-redactor.editor.holdBakeOnJoin"), cfgHoldOnJoin);
+        LightConfig.holdBakeOnJoin = cfgHoldOnJoin.get();
+
+        if (LightConfig.holdBake)
+        {
+            Widgets.textDisabled(Lang.t("irl-redactor.editor.holdActive"));
+            if (Widgets.primaryButton("perf_bake_now", Lang.t("irl-redactor.editor.bakeNow"), ImGui.getContentRegionAvail().x))
+            {
+                LightConfig.holdBake = false;
+            }
+        }
+    }
+
+    /** Shadows: quality preset + block-shadow toggles and radius. */
+    private void shadowsCategory()
+    {
         Widgets.text(Lang.t("irl-redactor.editor.shadowQuality"));
         String[] q = {"LOW", "MED", "HIGH", "ULTRA"};
         float segW = (ImGui.getContentRegionAvail().x - 3f * ITEM_SP_X) / 4f;
@@ -619,20 +739,19 @@ public class LightEditorPanel
             }
         }
 
-        Widgets.toggleRow("cfg_cache", Lang.t("irl-redactor.editor.shadowCache"), cfgCache);
-        LightConfig.shadowCache = cfgCache.get();
-
         Widgets.toggleRow("cfg_blocks", Lang.t("irl-redactor.editor.shadowBlocks"), cfgBlocks);
         LightConfig.shadowBlocks = cfgBlocks.get();
 
+        Widgets.toggleRow("cfg_cache", Lang.t("irl-redactor.editor.shadowCache"), cfgCache);
+        LightConfig.shadowCache = cfgCache.get();
+
         Widgets.trackpad("cfg_radius", Lang.t("irl-redactor.editor.shadowBlockRadius"), cfgRadius, 4f, 96f, "%.0f");
         LightConfig.shadowBlockRadius = Math.round(cfgRadius[0]);
+    }
 
-        Widgets.toggleRow("cfg_guides", Lang.t("irl-redactor.editor.showGuides"), cfgGuides);
-        LightConfig.showGuides = cfgGuides.get();
-
-        // --- auto block-lights ---
-        ImGui.dummy(0f, 4f);
+    /** Auto block-lights: the whole emissive-block auto-light block. */
+    private void autoCategory()
+    {
         boolean autoWas = LightConfig.autoLights;
         Widgets.toggleRow("cfg_autolights", Lang.t("irl-redactor.editor.autoLights"), cfgAutoLights);
         LightConfig.autoLights = cfgAutoLights.get();
@@ -646,100 +765,46 @@ public class LightEditorPanel
         ImGui.beginDisabled(!LightConfig.autoLights);
         // Surface culling: only light emissive blocks exposed to visible space
         // (skip ones buried in terrain / inside a solid cluster of emitters).
-        // Picked up by the rolling scan within ~1s.
         Widgets.toggleRow("cfg_autoculling", Lang.t("irl-redactor.editor.autoLightCulling"), cfgAutoCulling);
         LightConfig.autoLightCulling = cfgAutoCulling.get();
 
         Widgets.toggleRow("cfg_autoshadows", Lang.t("irl-redactor.editor.autoLightShadows"), cfgAutoShadows);
         LightConfig.autoLightShadows = cfgAutoShadows.get();
 
-        // Brightness / reach scale the hardcoded per-block table; scan radius is
-        // how far emitters are searched for. Changes are picked up by the rolling
-        // scan within ~1s (no explicit signal needed).
         Widgets.trackpad("cfg_autointensity", Lang.t("irl-redactor.editor.autoLightIntensity"), cfgAutoIntensity, 0f, 5f, "%.2f");
         LightConfig.autoLightIntensity = cfgAutoIntensity[0];
         Widgets.trackpad("cfg_autoreach", Lang.t("irl-redactor.editor.autoLightReach"), cfgAutoReach, 0.25f, 3f, "%.2f");
         LightConfig.autoLightReach = cfgAutoReach[0];
         Widgets.trackpad("cfg_autoradius", Lang.t("irl-redactor.editor.autoLightRadius"), cfgAutoRadius, 8f, 96f, "%.0f");
         LightConfig.autoLightRadius = Math.round(cfgAutoRadius[0]);
-
-        // Source limit (nearest-first). Applied live in the feed — no rescan needed,
-        // so it's NOT in autoChanged. High values get expensive: the shaderpack
-        // loops over every light per pixel. 0 = no auto-lights.
         Widgets.trackpad("cfg_automax", Lang.t("irl-redactor.editor.autoLightMax"), cfgAutoMax, 0f, 2000f, "%.0f");
         LightConfig.autoLightMax = Math.round(cfgAutoMax[0]);
 
-        // Show how many auto-lights are ACTUALLY active (capped by the source limit
-        // + SSBO headroom), with the raw scan total in parentheses — the active
-        // figure never climbs past "Max sources", unlike the raw tracked count.
         Widgets.textDisabled(Lang.t("irl-redactor.editor.autoLightActive",
             AutoLightManager.activeCount(), AutoLightManager.count()));
         ImGui.endDisabled();
+    }
 
-        ImGui.dummy(0f, 2f);
-        if (Widgets.button("open_patcher", Lang.t("irl-redactor.patcher.title"), ImGui.getContentRegionAvail().x, false))
+    /** Patcher: opens the shader-patcher modal. */
+    private void patcherCategory()
+    {
+        Widgets.textDisabledWrapped(Lang.t("irl-redactor.editor.patcherHint"));
+        ImGui.dummy(0f, 4f);
+        if (Widgets.button("open_patcher", Lang.t("irl-redactor.editor.openPatcher"), ImGui.getContentRegionAvail().x, false))
         {
             patcher.open();
         }
     }
 
-    // ---- performance (dev profiler + deferred initial bake) ----------------
-
-    /** GPU profiler toggle + deferred-bake controls. Both flags are owned by
-     *  other classes and can change outside this panel (profiler pre-arm -D
-     *  flag, world-join hold arm), so the ImBoolean mirrors resync from the
-     *  source of truth before drawing instead of the one-directional cfg*
-     *  pattern the other groups use. */
-    private void perfGroup()
-    {
-        if (!Widgets.collapsingHeader("perf", Lang.t("irl-redactor.editor.perf"), false))
-        {
-            return;
-        }
-
-        cfgPerfProfiler.set(VlProfiler.isCollecting());
-        Widgets.toggleRow("cfg_perf_profiler", Lang.t("irl-redactor.editor.perfProfiler"), cfgPerfProfiler);
-        VlProfiler.setCollecting(cfgPerfProfiler.get());
-
-        ImGui.dummy(0f, 4f);
-
-        cfgHoldBake.set(LightConfig.holdBake);
-        Widgets.toggleRow("cfg_perf_hold", Lang.t("irl-redactor.editor.holdBake"), cfgHoldBake);
-        LightConfig.holdBake = cfgHoldBake.get();
-
-        cfgHoldOnJoin.set(LightConfig.holdBakeOnJoin);
-        Widgets.toggleRow("cfg_perf_holdjoin", Lang.t("irl-redactor.editor.holdBakeOnJoin"), cfgHoldOnJoin);
-        LightConfig.holdBakeOnJoin = cfgHoldOnJoin.get();
-
-        if (LightConfig.holdBake)
-        {
-            Widgets.textDisabled(Lang.t("irl-redactor.editor.holdActive"));
-            if (Widgets.primaryButton("perf_bake_now", Lang.t("irl-redactor.editor.bakeNow"),
-                ImGui.getContentRegionAvail().x))
-            {
-                LightConfig.holdBake = false;
-            }
-        }
-    }
-
     // ---- global volumetrics (live) ----------------------------------------
 
-    /** Scene-wide volumetric knobs, applied live: every value is written back
-     *  into {@link LightConfig} and pushed to the binding-7 globals UBO by the
-     *  driver next frame — no shaderpack recompile. Ranges and defaults mirror
-     *  the Complementary pack's IRLITE_VL_* option lists (same as IRLite's BBS
-     *  settings). Only shaderpacks patched with runtime VL globals respond;
-     *  older patches keep their compiled values. */
-    private void vlGroup()
+    /** Volumetric category: scene-wide VL knobs, applied live (pushed to the
+     *  binding-7 globals UBO by the driver next frame — no shaderpack recompile).
+     *  Intensity lives under Presets; the march / noise knobs are here. Ranges and
+     *  defaults mirror the packs' IRLITE_VL_* option lists. Only shaderpacks
+     *  patched with runtime VL globals respond; older patches keep compiled values. */
+    private void volumetricCategory()
     {
-        if (!Widgets.collapsingHeader("vl_global", Lang.t("irl-redactor.editor.vlGlobal"), false))
-        {
-            return;
-        }
-
-        Widgets.trackpad("cfg_vlintensity", Lang.t("irl-redactor.editor.vlIntensity"), cfgVlIntensity, 0f, 5f, "%.2f");
-        LightConfig.vlIntensity = cfgVlIntensity[0];
-
         Widgets.trackpad("cfg_vlsteps", Lang.t("irl-redactor.editor.vlSteps"), cfgVlSteps, 8f, 64f, "%.0f");
         LightConfig.vlSteps = Math.round(cfgVlSteps[0]);
 
@@ -770,17 +835,15 @@ public class LightEditorPanel
         Widgets.trackpad("cfg_vlnoisescale", Lang.t("irl-redactor.editor.vlNoiseScale"), cfgVlNoiseScale, 0.5f, 6f, "%.2f");
         LightConfig.vlNoiseScale = cfgVlNoiseScale[0];
 
-        // Snap to 0.25 in the mirror too, so the readout shows the effective
-        // value: the shader's wind is whole field-periods per its 3600 s time
-        // wrap, and in-between speeds would make the fog pop on the wrap (the
-        // core setter quantizes as well — this is just honest UI).
+        // Snap to 0.25 in the mirror too, so the readout shows the effective value
+        // (the shader wind is whole field-periods per its 3600 s time wrap; in-between
+        // speeds pop on the wrap — the core setter quantizes as well).
         Widgets.trackpad("cfg_vlnoisespeed", Lang.t("irl-redactor.editor.vlNoiseSpeed"), cfgVlNoiseSpeed, 0f, 3f, "%.2f");
         cfgVlNoiseSpeed[0] = Math.round(cfgVlNoiseSpeed[0] * 4f) / 4f;
         LightConfig.vlNoiseSpeed = cfgVlNoiseSpeed[0];
 
         // Same 0.25 snap as the drift speed: the morph phase must complete whole
-        // slice-periods per the shader's 3600 s time wrap, or the crossfade pops
-        // on the wrap (the core setter quantizes as well — this is honest UI).
+        // slice-periods per the shader's time wrap, or the crossfade pops on the wrap.
         Widgets.trackpad("cfg_vlnoisemorph", Lang.t("irl-redactor.editor.vlNoiseMorph"), cfgVlNoiseMorph, 0f, 3f, "%.2f");
         cfgVlNoiseMorph[0] = Math.round(cfgVlNoiseMorph[0] * 4f) / 4f;
         LightConfig.vlNoiseMorph = cfgVlNoiseMorph[0];
