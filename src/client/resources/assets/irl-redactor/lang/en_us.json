@@ -89,6 +89,8 @@
     "irl-redactor.editor.settingsTitle": "Settings",
     "irl-redactor.editor.searchHint": "Search...",
     "irl-redactor.editor.cat.presets": "Presets",
+    "irl-redactor.editor.presetQuality": "Quality",
+    "irl-redactor.editor.presetBeamStyle": "Beam style",
     "irl-redactor.editor.cat.volumetric": "Volumetric",
     "irl-redactor.editor.cat.shadows": "Shadows",
     "irl-redactor.editor.cat.outline": "Outline",

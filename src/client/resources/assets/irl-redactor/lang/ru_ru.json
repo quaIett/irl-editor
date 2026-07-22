@@ -89,6 +89,8 @@
     "irl-redactor.editor.settingsTitle": "Настройки",
     "irl-redactor.editor.searchHint": "Поиск...",
     "irl-redactor.editor.cat.presets": "Пресеты",
+    "irl-redactor.editor.presetQuality": "Качество",
+    "irl-redactor.editor.presetBeamStyle": "Стиль луча",
     "irl-redactor.editor.cat.volumetric": "Волюметрика",
     "irl-redactor.editor.cat.shadows": "Тени",
     "irl-redactor.editor.cat.outline": "Обводка",

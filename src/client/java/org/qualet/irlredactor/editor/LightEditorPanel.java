@@ -77,7 +77,6 @@ public class LightEditorPanel
     private static final int CAT_SHADOWS = 2;
     private static final int CAT_OUTLINE = 3;
     private static final int CAT_AUTO = 4;
-    private static final int CAT_PATCHER = 5;
     /** Whether the floating settings window is shown (toggled from the left panel,
      *  closed via its own title-bar [x] through this same flag). */
     private final ImBoolean settingsOpen = new ImBoolean(false);
@@ -206,10 +205,15 @@ public class LightEditorPanel
             // auto-sizes to content now, so there is nothing to pin against).
             ImGui.dummy(0f, 4f);
             ImGui.separator();
-            if (Widgets.button("open_settings", Lang.t("irl-redactor.editor.openSettings"),
-                ImGui.getContentRegionAvail().x, settingsOpen.get()))
+            float botW = (ImGui.getContentRegionAvail().x - ITEM_SP_X) * 0.5f;
+            if (Widgets.button("open_settings", Lang.t("irl-redactor.editor.openSettings"), botW, settingsOpen.get()))
             {
                 settingsOpen.set(!settingsOpen.get());
+            }
+            ImGui.sameLine();
+            if (Widgets.button("open_patcher", Lang.t("irl-redactor.patcher.title"), botW, false))
+            {
+                patcher.open();
             }
             Widgets.textDisabled(Lang.t("irl-redactor.editor.footer"));
         }
@@ -668,8 +672,11 @@ public class LightEditorPanel
             return;
         }
 
-        ImGui.setNextWindowPos(w - SETTINGS_W - 16f, 16f, ImGuiCond.FirstUseEver);
-        ImGui.setNextWindowSize(SETTINGS_W, Math.min(520f, h - 32f), ImGuiCond.FirstUseEver);
+        // Default position: parked on the right edge, vertically centred (not the
+        // top-right corner). FirstUseEver so a user drag afterwards is respected.
+        float settingsH = Math.min(520f, h - 32f);
+        ImGui.setNextWindowPos(w - SETTINGS_W - 16f, (h - settingsH) * 0.5f, ImGuiCond.FirstUseEver);
+        ImGui.setNextWindowSize(SETTINGS_W, settingsH, ImGuiCond.FirstUseEver);
 
         if (ImGui.begin(Lang.t("irl-redactor.editor.settingsTitle"), settingsOpen, ImGuiWindowFlags.NoCollapse))
         {
@@ -683,7 +690,6 @@ public class LightEditorPanel
                 settingsNavItem(CAT_SHADOWS, "irl-redactor.editor.cat.shadows");
                 settingsNavItem(CAT_OUTLINE, "irl-redactor.editor.cat.outline");
                 settingsNavItem(CAT_AUTO, "irl-redactor.editor.cat.auto");
-                settingsNavItem(CAT_PATCHER, "irl-redactor.editor.cat.patcher");
             }
             ImGui.endChild();
 
@@ -697,7 +703,6 @@ public class LightEditorPanel
                     case CAT_SHADOWS -> shadowsCategory();
                     case CAT_OUTLINE -> Widgets.textDisabledWrapped(Lang.t("irl-redactor.editor.outlineSoon"));
                     case CAT_AUTO -> autoCategory();
-                    case CAT_PATCHER -> patcherCategory();
                     default -> presetsCategory();
                 }
             }
@@ -721,6 +726,13 @@ public class LightEditorPanel
      *  this panel, so their mirrors resync from the source of truth each frame.) */
     private void presetsCategory()
     {
+        // Quality + Beam-style presets (mirror the BBS addon 1:1).
+        presetRow("qp", Lang.t("irl-redactor.editor.presetQuality"), SettingsPresets.QUALITY_LABELS,
+            SettingsPresets.quality(), SettingsPresets::applyQuality);
+        presetRow("bs", Lang.t("irl-redactor.editor.presetBeamStyle"), SettingsPresets.STYLE_LABELS,
+            SettingsPresets.style(), SettingsPresets::applyStyle);
+        ImGui.dummy(0f, 6f);
+
         Widgets.trackpad("cfg_vlintensity", Lang.t("irl-redactor.editor.vlIntensity"), cfgVlIntensity, 0f, 5f, "%.2f");
         LightConfig.vlIntensity = cfgVlIntensity[0];
 
@@ -750,6 +762,49 @@ public class LightEditorPanel
                 LightConfig.holdBake = false;
             }
         }
+    }
+
+    /** A preset selector row: a label + a segmented button per real preset. The
+     *  active preset (derived from the live values) is highlighted; when nothing
+     *  matches, the trailing "Custom" slot is appended to the label. Applying a
+     *  preset writes its members and resyncs the mirrors so the knobs follow. */
+    private void presetRow(String id, String labelBase, String[] labels, int active, java.util.function.IntConsumer apply)
+    {
+        int real = labels.length - 1; // last label = "Custom" (derived, not applyable)
+        Widgets.text(active == real ? labelBase + "  ·  " + labels[real] : labelBase);
+
+        float w = (ImGui.getContentRegionAvail().x - (real - 1) * ITEM_SP_X) / real;
+        for (int i = 0; i < real; i++)
+        {
+            if (Widgets.button(id + "_" + i, labels[i], w, active == i))
+            {
+                apply.accept(i);
+                syncPresetMirrors();
+            }
+            if (i < real - 1)
+            {
+                ImGui.sameLine();
+            }
+        }
+    }
+
+    /** Resync the VL / shadow mirrors from {@link LightConfig} after a preset writes
+     *  it, so the volumetric / shadow knobs reflect the preset instead of overwriting
+     *  it with their stale mirror on the next visit. */
+    private void syncPresetMirrors()
+    {
+        cfgVlSteps[0] = LightConfig.vlSteps;
+        cfgVlMaxDist[0] = LightConfig.vlMaxDist;
+        cfgVlShadowStride[0] = LightConfig.vlShadowStride;
+        cfgVlNoiseStride[0] = LightConfig.vlNoiseStride;
+        cfgVlShadows.set(LightConfig.vlShadows);
+        cfgBlocks.set(LightConfig.shadowBlocks);
+        cfgVlNoise.set(LightConfig.vlNoise);
+        cfgVlNoiseAmount[0] = LightConfig.vlNoiseAmount;
+        cfgVlNoiseScale[0] = LightConfig.vlNoiseScale;
+        cfgVlNoiseSpeed[0] = LightConfig.vlNoiseSpeed;
+        cfgVlTipBoost[0] = LightConfig.vlTipBoost;
+        cfgVlTipRadius[0] = LightConfig.vlTipRadius;
     }
 
     /** Shadows: quality preset + block-shadow toggles and radius. */
@@ -814,17 +869,6 @@ public class LightEditorPanel
         Widgets.textDisabled(Lang.t("irl-redactor.editor.autoLightActive",
             AutoLightManager.activeCount(), AutoLightManager.count()));
         ImGui.endDisabled();
-    }
-
-    /** Patcher: opens the shader-patcher modal. */
-    private void patcherCategory()
-    {
-        Widgets.textDisabledWrapped(Lang.t("irl-redactor.editor.patcherHint"));
-        ImGui.dummy(0f, 4f);
-        if (Widgets.button("open_patcher", Lang.t("irl-redactor.editor.openPatcher"), ImGui.getContentRegionAvail().x, false))
-        {
-            patcher.open();
-        }
     }
 
     // ---- global volumetrics (live) ----------------------------------------
