@@ -207,6 +207,34 @@ public final class Widgets
         return clicked;
     }
 
+    // ---- tab (horizontal strip cell) ---------------------------------------
+
+    /** One cell of a horizontal tab strip: centered label, dimmed at rest,
+     *  brighter on hover, brightest + a red underline when active. */
+    public static boolean tab(String id, String label, float width, boolean active)
+    {
+        float height = ImGui.getTextLineHeight() + 14f;
+        ImVec2 pos = ImGui.getCursorScreenPos();
+
+        ImGui.invisibleButton("##" + id, width, height);
+        boolean clicked = ImGui.isItemClicked();
+        boolean hover = ImGui.isItemHovered();
+
+        ImDrawList dl = ImGui.getWindowDrawList();
+        ImVec2 ts = ImGui.calcTextSize(label);
+        float tx = pos.x + (width - ts.x) * 0.5f;
+        float ty = pos.y + (height - ImGui.getTextLineHeight()) * 0.5f;
+        int col = active ? COL_VALUE : (hover ? COL_LABEL : COL_DIM);
+        int sh = active ? COL_VALUE_SH : COL_LABEL_SH;
+        shadowText(dl, tx, ty, col, sh, label);
+
+        if (active)
+        {
+            dl.addRectFilled(pos.x, pos.y + height - 2f, pos.x + width, pos.y + height, COL_ACCENT);
+        }
+        return clicked;
+    }
+
     /** Plain list entry: transparent at rest, subtle box on hover, accent fill when
      *  selected (the patcher's file rows — no per-row box like {@link #selectable}). */
     public static boolean listItem(String id, String label, boolean selected)

@@ -78,6 +78,14 @@ public class LightEditorPanel
     /** Settings search box buffer (filtering wired up in a later step). */
     private final ImString settingsSearch = new ImString(64);
 
+    // ---- inspector tabs ---------------------------------------------------
+    private static final int TAB_PLACEMENT = 0;
+    private static final int TAB_BASIC = 1;
+    private static final int TAB_VOLUME = 2;
+    private static final int TAB_SHADOW = 3;
+    /** Active inspector tab (one of the TAB_* constants). */
+    private int inspectorTab = TAB_PLACEMENT;
+
     // Perf-section mirrors. Resynced from the source of truth every frame before
     // drawing (unlike the one-directional cfg* mirrors below): holdBake is also
     // flipped outside the panel (world-join arm, "bake now" button), and the
@@ -172,11 +180,14 @@ public class LightEditorPanel
             {
                 header();
                 ImGui.separator();
-                placementGroup();
-                basicGroup();
-                cookieGroup();
-                volumetricGroup();
-                shadowGroup();
+                inspectorTabs();
+                switch (inspectorTab)
+                {
+                    case TAB_BASIC -> { basicGroup(); cookieGroup(); }
+                    case TAB_VOLUME -> volumetricGroup();
+                    case TAB_SHADOW -> shadowGroup();
+                    default -> placementGroup();
+                }
             }
 
             // "Settings" opener + footer, pinned to the bottom of the panel.
@@ -436,15 +447,38 @@ public class LightEditorPanel
         }
     }
 
+    // ---- inspector tab strip ----------------------------------------------
+
+    /** Horizontal tab strip under the light header: switches which inspector
+     *  section is shown (Placement / Basic / Volume / Shadows), matching the
+     *  HTML prototype. */
+    private void inspectorTabs()
+    {
+        String[] labels = {
+            Lang.t("irl-redactor.editor.tab.placement"),
+            Lang.t("irl-redactor.editor.tab.basic"),
+            Lang.t("irl-redactor.editor.tab.volume"),
+            Lang.t("irl-redactor.editor.tab.shadows"),
+        };
+        float cellW = ImGui.getContentRegionAvail().x / labels.length;
+        for (int i = 0; i < labels.length; i++)
+        {
+            if (Widgets.tab("insp_tab_" + i, labels[i], cellW, inspectorTab == i))
+            {
+                inspectorTab = i;
+            }
+            if (i < labels.length - 1)
+            {
+                ImGui.sameLine(0f, 0f);
+            }
+        }
+        ImGui.dummy(0f, 4f);
+    }
+
     // ---- placement group (Phase C) ----------------------------------------
 
     private void placementGroup()
     {
-        if (!Widgets.collapsingHeader("placement", Lang.t("irl-redactor.editor.placement"), true))
-        {
-            return;
-        }
-
         Widgets.dragValue("pos_x", "X", state.pos, 0, 0.05f, "%.2f");
         Widgets.dragValue("pos_y", "Y", state.pos, 1, 0.05f, "%.2f");
         Widgets.dragValue("pos_z", "Z", state.pos, 2, 0.05f, "%.2f");
@@ -481,11 +515,6 @@ public class LightEditorPanel
 
     private void basicGroup()
     {
-        if (!Widgets.collapsingHeader("basic", Lang.t("irl-redactor.editor.basic"), true))
-        {
-            return;
-        }
-
         Widgets.text(Lang.t("irl-redactor.editor.color"));
         ImGui.sameLine();
         float swatchW = 46f;
@@ -508,11 +537,6 @@ public class LightEditorPanel
 
     private void volumetricGroup()
     {
-        if (!Widgets.collapsingHeader("vol", Lang.t("irl-redactor.editor.volumetric"), false))
-        {
-            return;
-        }
-
         Widgets.toggleRow("vol_on", Lang.t("irl-redactor.editor.enable"), state.vol);
 
         ImGui.beginDisabled(!state.vol.get());
@@ -525,11 +549,6 @@ public class LightEditorPanel
 
     private void shadowGroup()
     {
-        if (!Widgets.collapsingHeader("shadows", Lang.t("irl-redactor.editor.shadowsBehavior"), false))
-        {
-            return;
-        }
-
         Widgets.toggleRow("shadows_on", Lang.t("irl-redactor.editor.shadows"), state.shadows);
         Widgets.trackpad("bulb", Lang.t("irl-redactor.editor.shadowSoft"), state.bulb, 0f, 2f, "%.2f");
 
