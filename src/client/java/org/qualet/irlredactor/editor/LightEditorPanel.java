@@ -166,6 +166,10 @@ public class LightEditorPanel
     private final Quaternionf gizmoQuat = new Quaternionf();
     private boolean gizmoRotating;
 
+    /** Screen-space guide overlay: the rich in-world guides + the spotlight
+     *  ring/disc drag, drawn on the background draw list like the gizmo. */
+    private final GuideOverlay guides = new GuideOverlay();
+
     public void draw()
     {
         // Must run after ImGui.newFrame() (it does, via ImGuiRuntime.frame) and
@@ -243,12 +247,23 @@ public class LightEditorPanel
         // Global settings, in a separate movable window on the right.
         drawSettingsWindow(w, h);
 
-        // The move gizmo is drawn over the world (background draw list, so it sits
-        // behind the panel) and may update state.pos; push commits everything —
-        // including a gizmo drag — into the engine model for the driver next frame.
+        // Guides + move gizmo are drawn over the world (background draw list, behind
+        // the panel). A spotlight ring/disc drag owns the mouse while active, so the
+        // gizmo is skipped then to keep the two from fighting over the cursor. Both
+        // may mutate `state`; push commits everything into the engine model for the
+        // driver next frame.
         if (selected != null)
         {
-            drawGizmo();
+            if (guides.isDragging())
+            {
+                guides.frame(state, selected, false);
+            }
+            else
+            {
+                drawGizmo();
+                boolean canGuide = !ImGui.getIO().getWantCaptureMouse() && !ImGuizmo.isUsing();
+                guides.frame(state, selected, canGuide);
+            }
             LightSync.push(state, selected);
         }
 
