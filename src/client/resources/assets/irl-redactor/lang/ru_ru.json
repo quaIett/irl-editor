@@ -76,6 +76,8 @@
     "irl-redactor.editor.vlDitherTemporal": "Временная ротация дизера",
     "irl-redactor.editor.vlDitherTemporalWarn": "Без TAA может мерцать/кипеть на движущихся лампах.",
     "irl-redactor.editor.vlHint": "Применяется на лету в паках с runtime-патчем VL. Скорости дрейфа и морфинга кратны 0.25.",
+    "irl-redactor.editor.vlGroupBeam": "Луч",
+    "irl-redactor.editor.vlGroupNoise": "Шум",
     "irl-redactor.editor.perf": "Производительность",
     "irl-redactor.editor.perfProfiler": "GPU-профайлер (лог + HUD)",
     "irl-redactor.editor.holdBake": "Отложить бейк теней",

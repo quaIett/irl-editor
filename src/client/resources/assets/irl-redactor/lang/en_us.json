@@ -76,6 +76,8 @@
     "irl-redactor.editor.vlDitherTemporal": "Temporal dither rotation",
     "irl-redactor.editor.vlDitherTemporalWarn": "May shimmer/boil on moving lamps without TAA.",
     "irl-redactor.editor.vlHint": "Applies live to packs patched with runtime VL globals. Drift and morph speeds snap to 0.25.",
+    "irl-redactor.editor.vlGroupBeam": "Beam",
+    "irl-redactor.editor.vlGroupNoise": "Noise",
     "irl-redactor.editor.perf": "Performance",
     "irl-redactor.editor.perfProfiler": "GPU profiler (log + HUD)",
     "irl-redactor.editor.holdBake": "Hold shadow bake",

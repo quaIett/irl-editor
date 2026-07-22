@@ -836,17 +836,15 @@ public class LightEditorPanel
      *  patched with runtime VL globals respond; older patches keep compiled values. */
     private void volumetricCategory()
     {
+        // Two columns matching the HTML prototype: beam knobs left, noise right.
+        ImGui.columns(2, "##vl_cols", false);
+
+        Widgets.textDisabled(Lang.t("irl-redactor.editor.vlGroupBeam"));
         Widgets.trackpad("cfg_vlsteps", Lang.t("irl-redactor.editor.vlSteps"), cfgVlSteps, 8f, 64f, "%.0f");
         LightConfig.vlSteps = Math.round(cfgVlSteps[0]);
 
         Widgets.trackpad("cfg_vlmaxdist", Lang.t("irl-redactor.editor.vlMaxDist"), cfgVlMaxDist, 32f, 256f, "%.0f");
         LightConfig.vlMaxDist = cfgVlMaxDist[0];
-
-        Widgets.trackpad("cfg_vltipboost", Lang.t("irl-redactor.editor.vlTipBoost"), cfgVlTipBoost, 0f, 4f, "%.2f");
-        LightConfig.vlTipBoost = cfgVlTipBoost[0];
-
-        Widgets.trackpad("cfg_vltipradius", Lang.t("irl-redactor.editor.vlTipRadius"), cfgVlTipRadius, 0.5f, 4f, "%.2f");
-        LightConfig.vlTipRadius = cfgVlTipRadius[0];
 
         Widgets.toggleRow("cfg_vlshadows", Lang.t("irl-redactor.editor.vlShadows"), cfgVlShadows);
         LightConfig.vlShadows = cfgVlShadows.get();
@@ -856,6 +854,15 @@ public class LightEditorPanel
         LightConfig.vlShadowStride = Math.round(cfgVlShadowStride[0]);
         ImGui.endDisabled();
 
+        Widgets.trackpad("cfg_vltipboost", Lang.t("irl-redactor.editor.vlTipBoost"), cfgVlTipBoost, 0f, 4f, "%.2f");
+        LightConfig.vlTipBoost = cfgVlTipBoost[0];
+
+        Widgets.trackpad("cfg_vltipradius", Lang.t("irl-redactor.editor.vlTipRadius"), cfgVlTipRadius, 0.5f, 4f, "%.2f");
+        LightConfig.vlTipRadius = cfgVlTipRadius[0];
+
+        ImGui.nextColumn();
+
+        Widgets.textDisabled(Lang.t("irl-redactor.editor.vlGroupNoise"));
         Widgets.toggleRow("cfg_vlnoise", Lang.t("irl-redactor.editor.vlNoise"), cfgVlNoise);
         LightConfig.vlNoise = cfgVlNoise.get();
 
@@ -866,15 +873,15 @@ public class LightEditorPanel
         Widgets.trackpad("cfg_vlnoisescale", Lang.t("irl-redactor.editor.vlNoiseScale"), cfgVlNoiseScale, 0.5f, 6f, "%.2f");
         LightConfig.vlNoiseScale = cfgVlNoiseScale[0];
 
-        // Snap to 0.25 in the mirror too, so the readout shows the effective value
-        // (the shader wind is whole field-periods per its 3600 s time wrap; in-between
-        // speeds pop on the wrap — the core setter quantizes as well).
+        // Snap the mirror to 0.25 too, so the readout shows the effective value
+        // (in-between drift speeds pop on the shader's time wrap; the core setter
+        // quantizes as well).
         Widgets.trackpad("cfg_vlnoisespeed", Lang.t("irl-redactor.editor.vlNoiseSpeed"), cfgVlNoiseSpeed, 0f, 3f, "%.2f");
         cfgVlNoiseSpeed[0] = Math.round(cfgVlNoiseSpeed[0] * 4f) / 4f;
         LightConfig.vlNoiseSpeed = cfgVlNoiseSpeed[0];
 
-        // Same 0.25 snap as the drift speed: the morph phase must complete whole
-        // slice-periods per the shader's time wrap, or the crossfade pops on the wrap.
+        // Same 0.25 snap as the drift speed (the morph phase must complete whole
+        // slice-periods per the wrap, or the crossfade pops).
         Widgets.trackpad("cfg_vlnoisemorph", Lang.t("irl-redactor.editor.vlNoiseMorph"), cfgVlNoiseMorph, 0f, 3f, "%.2f");
         cfgVlNoiseMorph[0] = Math.round(cfgVlNoiseMorph[0] * 4f) / 4f;
         LightConfig.vlNoiseMorph = cfgVlNoiseMorph[0];
@@ -885,6 +892,8 @@ public class LightEditorPanel
 
         Widgets.toggleRow("cfg_vldithertemporal", Lang.t("irl-redactor.editor.vlDitherTemporal"), cfgVlDitherTemporal);
         LightConfig.vlDitherTemporal = cfgVlDitherTemporal.get();
+
+        ImGui.columns(1);
 
         if (LightConfig.vlDitherTemporal)
         {
