@@ -15,10 +15,9 @@ import java.util.Map;
 
 /**
  * Custom immediate-mode widgets drawn directly via {@link ImDrawList} for
- * pixel-level control, matching the BBS / vanilla-Minecraft look: no element
- * outlines, and text with a vanilla-style drop shadow (offset +1,+1 in a darker
- * tone). Drawing text ourselves is what lets every label carry the MC shadow —
- * ImGui's built-in widget text cannot, so buttons and headers are custom too.
+ * pixel-level control of layout and colour: flat fills, no element outlines,
+ * and crisp flat text (the old vanilla-MC drop shadow was retired with the
+ * pixel font). Buttons and headers are custom so every label shares one look.
  */
 public final class Widgets
 {
@@ -26,12 +25,11 @@ public final class Widgets
     {
     }
 
-    private static final float SHADOW = 1f;
     private static final float TRACKPAD_HEIGHT = 30f;
     private static final float DRAG_RANGE_PX = 300f;
 
     private static final int COL_BG        = ImColor.rgba(0x1c, 0x1c, 0x1c, 0xff);
-    private static final int COL_FILL      = ImColor.rgba(0xe6, 0x2e, 0x8b, 0xff);
+    private static final int COL_FILL      = ImColor.rgba(0xe4, 0x2b, 0x25, 0xff);
 
     private static final int COL_LABEL     = ImColor.rgba(0xe2, 0xe2, 0xe2, 0xff);
     private static final int COL_LABEL_SH  = ImColor.rgba(0x38, 0x38, 0x38, 0xff);
@@ -40,7 +38,7 @@ public final class Widgets
     private static final int COL_DIM       = ImColor.rgba(0x8a, 0x8a, 0x8a, 0xff);
     private static final int COL_DIM_SH    = ImColor.rgba(0x22, 0x22, 0x22, 0xff);
 
-    private static final int COL_ACCENT    = ImColor.rgba(0xe6, 0x2e, 0x8b, 0xff);
+    private static final int COL_ACCENT    = ImColor.rgba(0xe4, 0x2b, 0x25, 0xff);
     private static final int COL_TRACK     = ImColor.rgba(0x3a, 0x3a, 0x3a, 0xff);
     private static final int COL_KNOB_OFF  = ImColor.rgba(0x77, 0x77, 0x77, 0xff);
     private static final int COL_KNOB_ON   = ImColor.rgba(0xff, 0xff, 0xff, 0xff);
@@ -50,11 +48,11 @@ public final class Widgets
     private static final int COL_BTN_TEXT  = ImColor.rgba(0xc4, 0xc4, 0xc4, 0xff);
     private static final int COL_BTN_TX_SH = ImColor.rgba(0x30, 0x30, 0x30, 0xff);
 
-    // Magenta "primary" call-to-action button (Validate / Patch in the patcher),
-    // matching the prototype: solid accent fill with dark text.
-    private static final int COL_PRIMARY      = ImColor.rgba(0xe6, 0x2e, 0x8b, 0xff);
-    private static final int COL_PRIMARY_HOV  = ImColor.rgba(0xf0, 0x4a, 0x9e, 0xff);
-    private static final int COL_PRIMARY_TEXT = ImColor.rgba(0x1c, 0x1c, 0x1c, 0xff);
+    // Red "primary" call-to-action button (Validate / Patch in the patcher):
+    // solid accent fill with white text.
+    private static final int COL_PRIMARY      = ImColor.rgba(0xe4, 0x2b, 0x25, 0xff);
+    private static final int COL_PRIMARY_HOV  = ImColor.rgba(0xff, 0x3a, 0x33, 0xff);
+    private static final int COL_PRIMARY_TEXT = ImColor.rgba(0xff, 0xff, 0xff, 0xff);
 
     // Plain list row (no per-row box) for the patcher's file lists.
     private static final int COL_ROW_HOVER = ImColor.rgba(0x2e, 0x2e, 0x2e, 0xff);
@@ -71,7 +69,8 @@ public final class Widgets
 
     private static void shadowText(ImDrawList dl, float x, float y, int color, int shadow, String text)
     {
-        dl.addText(x + SHADOW, y + SHADOW, shadow, text);
+        // Flat text: the vanilla-MC drop shadow was retired with the pixel font.
+        // (The shadow-colour params are kept so call sites stay unchanged.)
         dl.addText(x, y, color, text);
     }
 

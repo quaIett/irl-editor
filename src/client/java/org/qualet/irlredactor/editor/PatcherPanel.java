@@ -50,9 +50,9 @@ public class PatcherPanel
 
     private static final int COL_ICON      = ImColor.rgba(0xb4, 0xb4, 0xb4, 0xff);
     private static final int COL_ICON_HOV  = ImColor.rgba(0xff, 0xff, 0xff, 0xff);
-    private static final int COL_X_HOV     = ImColor.rgba(0xe6, 0x2e, 0x8b, 0xff);
+    private static final int COL_X_HOV     = ImColor.rgba(0xe4, 0x2b, 0x25, 0xff);
     private static final int COL_LIST_BG   = ImColor.rgba(0x1b, 0x1b, 0x1b, 0xff);
-    private static final int COL_SCROLL    = ImColor.rgba(0xe6, 0x2e, 0x8b, 0xff);
+    private static final int COL_SCROLL    = ImColor.rgba(0xe4, 0x2b, 0x25, 0xff);
 
     // Status / meta colours (0xRRGGBB).
     private static final int RGB_OK   = 0x55FF55;
@@ -423,7 +423,7 @@ public class PatcherPanel
     // ---- list of files -----------------------------------------------------
 
     /** A bordered, scrollable list of names; returns the (possibly updated) selected index.
-     *  Magenta scrollbar + darker background to match the prototype. */
+     *  Red scrollbar + darker background to match the prototype. */
     private int fileList(String id, List<String> items, int selected, String emptyKey)
     {
         ImGui.pushStyleColor(ImGuiCol.ChildBg, COL_LIST_BG);
