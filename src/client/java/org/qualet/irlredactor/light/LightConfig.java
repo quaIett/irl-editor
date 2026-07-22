@@ -150,6 +150,32 @@ public final class LightConfig
      *  pure performance. */
     public static boolean vlShadowHiz = true;
 
+    // --- Outline (live, via the globals UBO) -----------------------------------
+    // Fresnel-rim outline, migrated off the Iris shader screen into the UBO so it
+    // applies live on UBO-era patched packs. Defaults mirror the packs' compiled
+    // IRLITE_OUTLINE_* defines and match the BBS addon's outline settings 1:1.
+
+    /** Master outline toggle (default on). */
+    public static boolean outline = true;
+    /** What the outline draws on: 0 all / 1 entities / 2 blocks (default 1). */
+    public static int outlineTarget = 1;
+    /** Outline strength (0..3, default 0.65). */
+    public static float outlineStrength = 0.65f;
+    /** Outline thickness = depth-edge tap offset in pixels (1..6, default 6). */
+    public static int outlinePixelSize = 6;
+    /** Fresnel falloff exponent (1..4, default 2.2). */
+    public static float outlineFresnelPower = 2.2f;
+    /** Backlight rim strength on surfaces facing away (0..2, default 1.0). */
+    public static float outlineBack = 1.0f;
+    /** Front catch-light toggle (default off). */
+    public static boolean outlineFront = false;
+    /** Front catch-light strength (0..1.5, default 0.3). */
+    public static float outlineFrontStrength = 0.3f;
+    /** Inner glow (soft Fresnel halo feeding bloom) toggle (default off). */
+    public static boolean outlineGlow = false;
+    /** Inner glow strength (0..0.75, default 0.12). */
+    public static float outlineGlowStrength = 0.12f;
+
     private LightConfig()
     {}
 

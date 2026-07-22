@@ -133,6 +133,17 @@ public class LightEditorPanel
     private final float[]   cfgVlNoiseStride  = { LightConfig.vlNoiseStride };
     private final ImBoolean cfgVlDitherTemporal = new ImBoolean(LightConfig.vlDitherTemporal);
 
+    // Outline mirrors.
+    private final ImBoolean cfgOutline          = new ImBoolean(LightConfig.outline);
+    private final float[]   cfgOutlineStrength  = { LightConfig.outlineStrength };
+    private final float[]   cfgOutlinePixelSize = { LightConfig.outlinePixelSize };
+    private final float[]   cfgOutlineFresnel   = { LightConfig.outlineFresnelPower };
+    private final float[]   cfgOutlineBack      = { LightConfig.outlineBack };
+    private final ImBoolean cfgOutlineFront     = new ImBoolean(LightConfig.outlineFront);
+    private final float[]   cfgOutlineFrontStr  = { LightConfig.outlineFrontStrength };
+    private final ImBoolean cfgOutlineGlow      = new ImBoolean(LightConfig.outlineGlow);
+    private final float[]   cfgOutlineGlowStr   = { LightConfig.outlineGlowStrength };
+
     /** Experimental-feature warning popup id. */
     private static final String WARN_POPUP_ID = "##irl_auto_warn";
     /** Shown once per game session (JVM): set when the warning is first displayed
@@ -709,7 +720,7 @@ public class LightEditorPanel
                 {
                     case CAT_VOLUMETRIC -> volumetricCategory();
                     case CAT_SHADOWS -> shadowsCategory();
-                    case CAT_OUTLINE -> Widgets.textDisabledWrapped(Lang.t("irl-redactor.editor.outlineSoon"));
+                    case CAT_OUTLINE -> outlineCategory();
                     case CAT_AUTO -> autoCategory();
                     case CAT_INTERFACE -> editorCategory();
                     default -> presetsCategory();
@@ -895,6 +906,59 @@ public class LightEditorPanel
             EditorTheme.accent[1] = EditorTheme.DEFAULT_ACCENT[1];
             EditorTheme.accent[2] = EditorTheme.DEFAULT_ACCENT[2];
         }
+    }
+
+    /** Outline: the Fresnel-rim outline options (mirror the BBS addon 1:1), live via
+     *  the globals UBO on UBO-era patched packs. */
+    private void outlineCategory()
+    {
+        Widgets.toggleRow("cfg_outline", Lang.t("irl-redactor.editor.cat.outline"), cfgOutline);
+        LightConfig.outline = cfgOutline.get();
+
+        ImGui.beginDisabled(!LightConfig.outline);
+
+        Widgets.text(Lang.t("irl-redactor.editor.outlineDrawOn"));
+        String[] tgt = {"ALL", "ENTITIES", "BLOCKS"};
+        float segW = (ImGui.getContentRegionAvail().x - 2f * ITEM_SP_X) / 3f;
+        for (int i = 0; i < tgt.length; i++)
+        {
+            if (Widgets.button("ot_" + i, tgt[i], segW, LightConfig.outlineTarget == i))
+            {
+                LightConfig.outlineTarget = i;
+            }
+            if (i < tgt.length - 1)
+            {
+                ImGui.sameLine();
+            }
+        }
+
+        Widgets.trackpad("cfg_ostrength", Lang.t("irl-redactor.editor.outlineStrength"), cfgOutlineStrength, 0f, 3f, "%.2f");
+        LightConfig.outlineStrength = cfgOutlineStrength[0];
+
+        Widgets.trackpad("cfg_othick", Lang.t("irl-redactor.editor.outlineThickness"), cfgOutlinePixelSize, 1f, 6f, "%.0f");
+        LightConfig.outlinePixelSize = Math.round(cfgOutlinePixelSize[0]);
+
+        Widgets.trackpad("cfg_ofresnel", Lang.t("irl-redactor.editor.outlineFresnel"), cfgOutlineFresnel, 1f, 4f, "%.2f");
+        LightConfig.outlineFresnelPower = cfgOutlineFresnel[0];
+
+        Widgets.trackpad("cfg_oback", Lang.t("irl-redactor.editor.outlineRim"), cfgOutlineBack, 0f, 2f, "%.2f");
+        LightConfig.outlineBack = cfgOutlineBack[0];
+
+        Widgets.toggleRow("cfg_ofront", Lang.t("irl-redactor.editor.outlineFront"), cfgOutlineFront);
+        LightConfig.outlineFront = cfgOutlineFront.get();
+        ImGui.beginDisabled(!LightConfig.outlineFront);
+        Widgets.trackpad("cfg_ofrontstr", Lang.t("irl-redactor.editor.outlineFrontStrength"), cfgOutlineFrontStr, 0f, 1.5f, "%.2f");
+        LightConfig.outlineFrontStrength = cfgOutlineFrontStr[0];
+        ImGui.endDisabled();
+
+        Widgets.toggleRow("cfg_oglow", Lang.t("irl-redactor.editor.outlineGlow"), cfgOutlineGlow);
+        LightConfig.outlineGlow = cfgOutlineGlow.get();
+        ImGui.beginDisabled(!LightConfig.outlineGlow);
+        Widgets.trackpad("cfg_oglowstr", Lang.t("irl-redactor.editor.outlineGlowStrength"), cfgOutlineGlowStr, 0f, 0.75f, "%.2f");
+        LightConfig.outlineGlowStrength = cfgOutlineGlowStr[0];
+        ImGui.endDisabled();
+
+        ImGui.endDisabled();
     }
 
     // ---- global volumetrics (live) ----------------------------------------

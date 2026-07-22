@@ -65,6 +65,14 @@ public final class LightDriver
                 | (LightConfig.vlClusterCull() ? 16 : 0) | (LightConfig.vlShadowHiz() ? 32 : 0)
                 | 64);   // bit6 = depth-aware bilateral VL upsample, always on (no UI knob)
 
+        // Outline knobs -> globals UBO (also live; edited in the settings "Outline"
+        // category). Mirrors the BBS addon's LightCollector call 1:1.
+        VlGlobalsBuffer.setOutline(
+            LightConfig.outline, LightConfig.outlineTarget, LightConfig.outlineStrength,
+            LightConfig.outlineFresnelPower, LightConfig.outlineBack, LightConfig.outlineFront,
+            LightConfig.outlineFrontStrength, LightConfig.outlineGlow, LightConfig.outlineGlowStrength,
+            LightConfig.outlinePixelSize);
+
         if (world == null || cameraPos == null)
         {
             return;
