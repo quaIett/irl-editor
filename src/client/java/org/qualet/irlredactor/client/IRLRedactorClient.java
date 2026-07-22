@@ -45,12 +45,19 @@ import java.nio.file.Path;
 public class IRLRedactorClient implements ClientModInitializer
 {
     private static KeyBinding openEditor;
+    private static KeyBinding freeCamera;
 
     /** Key of the world currently joined (folder name SP / address MP), or null. */
     private static String currentWorldKey;
 
     /** Previous raw (GLFW) state of J, for front-edge detection in a replay. */
     private static boolean rawToggleDown;
+
+    /** Previous raw (GLFW) state of the free-camera bind, for front-edge detection. */
+    private static boolean fcKeyWasDown;
+
+    /** Previous editor-open state, to enable the free camera the moment it opens. */
+    private static boolean fcEditorWasOpen;
 
     @Override
     public void onInitializeClient()
@@ -63,6 +70,8 @@ public class IRLRedactorClient implements ClientModInitializer
         // and the HUD overlay unconditionally — every call is a cheap no-op until
         // the user flips the runtime toggle (VlProfiler.setCollecting).
         HudRenderCallback.EVENT.register((ctx, tickDelta) -> VlProfiler.renderHud(ctx));
+        // Free-fly camera "Speed x.x" indicator (no-op while the camera is off).
+        HudRenderCallback.EVENT.register((ctx, tickDelta) -> FreeCamera.renderHud(ctx));
         ShadowEngine.installBakeProbe(new ShadowBakeProbe()
         {
             @Override
@@ -93,6 +102,13 @@ public class IRLRedactorClient implements ClientModInitializer
             "category.irl-redactor"
         ));
 
+        freeCamera = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+            "key.irl-redactor.free_camera",
+            InputUtil.Type.KEYSYM,
+            GLFW.GLFW_KEY_F,
+            "category.irl-redactor"
+        ));
+
         // In-world light guides (gated by LightConfig.showGuides).
         LightGuideRenderer.register();
 
@@ -113,6 +129,7 @@ public class IRLRedactorClient implements ClientModInitializer
             saveCurrentWorld();
             LightScene.clear();
             AutoLightManager.clear();
+            FreeCamera.disable();
             currentWorldKey = null;
         });
     }
@@ -137,6 +154,40 @@ public class IRLRedactorClient implements ClientModInitializer
             AutoLightManager.tick(client.world,
                 client.player.getX(), client.player.getEyeY(), client.player.getZ());
         }
+
+        // Free-fly camera lives inside the editor: it's on by default the moment
+        // the editor opens, and the bound key (default F, read raw — the vanilla
+        // keybind can't fire behind a screen, so no clash with swap-offhand)
+        // toggles it off/on within the session. Auto-off + position reset on close.
+        long fcHandle = client.getWindow().getHandle();
+        boolean fcDown = FreeCamera.isKeyDown(fcHandle, freeCamera);
+        boolean fcEdge = fcDown && !fcKeyWasDown;
+        fcKeyWasDown = fcDown;
+        boolean editorOpen = LightEditorScreen.isOverlayActive();
+        if (editorOpen)
+        {
+            // Enable by default the first tick the editor is open.
+            if (!fcEditorWasOpen && !FreeCamera.isActive())
+            {
+                FreeCamera.toggle();
+            }
+            if (fcEdge && !imguiWantsKeyboard())
+            {
+                FreeCamera.toggle();
+            }
+        }
+        else
+        {
+            // Editor closed: turn the camera off and forget the saved position
+            // (disable() is idempotent, so calling it every tick is fine).
+            FreeCamera.disable();
+        }
+        fcEditorWasOpen = editorOpen;
+        // Drain the vanilla queue so an in-editor F press never leaks out later.
+        while (freeCamera.wasPressed())
+        {
+        }
+        FreeCamera.tickFreeze();
 
         // Drain the keybind queue every tick so a press made during a replay (fly-
         // camera mode, where the keybind does fire) can't leak out as a stale open.

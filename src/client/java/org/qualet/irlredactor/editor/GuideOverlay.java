@@ -91,6 +91,16 @@ public final class GuideOverlay
         return drag != NONE;
     }
 
+    /** True when the cursor is over a spot handle or a handle drag is active. The
+     *  free camera polls this (statically, no overlay reference needed) to yield
+     *  hold-LMB mouse-look to a guide drag — the drag wins. */
+    private static volatile boolean handleActive;
+
+    public static boolean isHandleActive()
+    {
+        return handleActive;
+    }
+
     /**
      * Per-frame pass: draw guides for every scene light and run the selected
      * spotlight's handle drag.
@@ -104,6 +114,7 @@ public final class GuideOverlay
     public void frame(LightState state, PlacedLight selected, boolean allowInput)
     {
         MinecraftClient mc = MinecraftClient.getInstance();
+        handleActive = false;
         Camera cam = mc.gameRenderer == null ? null : mc.gameRenderer.getCamera();
         if (cam == null || mc.world == null || mc.getWindow().getFramebufferHeight() == 0)
         {
@@ -154,6 +165,9 @@ public final class GuideOverlay
         {
             drag = NONE;
         }
+
+        // Free camera yields hold-LMB look while a handle is hot or being dragged.
+        handleActive = drag != NONE || hot != NONE;
 
         // ---- draw ONLY the selected light's guide -------------------------
         // Gizmo-like: the guide + its grab handles belong to the active selection,

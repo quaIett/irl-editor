@@ -9,6 +9,9 @@
     "MouseImGuiMixin",
     "KeyboardImGuiMixin",
     "WorldBlockChangeMixin",
+    "CameraFreeMixin",
+    "FreeCamInputMixin",
+    "FreeCamScrollMixin",
     "iris.CompositeRendererTimerMixin",
     "iris.ProgramSamplersBuilderMixin",
     "iris.SamplerBindingCubeArrayMixin"
