@@ -6,6 +6,7 @@ import imgui.ImGui;
 import imgui.ImVec2;
 import imgui.flag.ImGuiMouseCursor;
 import imgui.type.ImBoolean;
+import org.qualet.irlredactor.imgui.EditorTheme;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -29,7 +30,7 @@ public final class Widgets
     private static final float DRAG_RANGE_PX = 300f;
 
     private static final int COL_BG        = ImColor.rgba(0x1c, 0x1c, 0x1c, 0xff);
-    private static final int COL_FILL      = ImColor.rgba(0xe4, 0x2b, 0x25, 0xff);
+    private static int COL_FILL      = ImColor.rgba(0xe4, 0x2b, 0x25, 0xff);
 
     private static final int COL_LABEL     = ImColor.rgba(0xe2, 0xe2, 0xe2, 0xff);
     private static final int COL_LABEL_SH  = ImColor.rgba(0x38, 0x38, 0x38, 0xff);
@@ -38,7 +39,7 @@ public final class Widgets
     private static final int COL_DIM       = ImColor.rgba(0x8a, 0x8a, 0x8a, 0xff);
     private static final int COL_DIM_SH    = ImColor.rgba(0x22, 0x22, 0x22, 0xff);
 
-    private static final int COL_ACCENT    = ImColor.rgba(0xe4, 0x2b, 0x25, 0xff);
+    private static int COL_ACCENT    = ImColor.rgba(0xe4, 0x2b, 0x25, 0xff);
     private static final int COL_TRACK     = ImColor.rgba(0x3a, 0x3a, 0x3a, 0xff);
     private static final int COL_KNOB_OFF  = ImColor.rgba(0x77, 0x77, 0x77, 0xff);
     private static final int COL_KNOB_ON   = ImColor.rgba(0xff, 0xff, 0xff, 0xff);
@@ -50,8 +51,8 @@ public final class Widgets
 
     // Red "primary" call-to-action button (Validate / Patch in the patcher):
     // solid accent fill with white text.
-    private static final int COL_PRIMARY      = ImColor.rgba(0xe4, 0x2b, 0x25, 0xff);
-    private static final int COL_PRIMARY_HOV  = ImColor.rgba(0xff, 0x3a, 0x33, 0xff);
+    private static int COL_PRIMARY      = ImColor.rgba(0xe4, 0x2b, 0x25, 0xff);
+    private static int COL_PRIMARY_HOV  = ImColor.rgba(0xff, 0x3a, 0x33, 0xff);
     private static final int COL_PRIMARY_TEXT = ImColor.rgba(0xff, 0xff, 0xff, 0xff);
 
     // Plain list row (no per-row box) for the patcher's file lists.
@@ -64,6 +65,17 @@ public final class Widgets
     private static final Map<String, Double> DRAG_START_VAL_D = new HashMap<>();
     private static final Map<String, Float> DRAG_START_X = new HashMap<>();
     private static final Map<String, Boolean> OPEN = new HashMap<>();
+
+    /** Recomputes the accent-derived colours from the live {@link EditorTheme}; call
+     *  once per frame before drawing so a change to the accent applies immediately. */
+    public static void refreshAccent()
+    {
+        int a = EditorTheme.accentU32();
+        COL_FILL = a;
+        COL_ACCENT = a;
+        COL_PRIMARY = a;
+        COL_PRIMARY_HOV = EditorTheme.accentHoverU32();
+    }
 
     // ---- text with a vanilla-Minecraft drop shadow -------------------------
 

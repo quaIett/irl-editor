@@ -16,6 +16,7 @@ import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.qualet.irl.light.LightMath;
 import org.qualet.irlredactor.client.diag.VlProfiler;
+import org.qualet.irlredactor.imgui.EditorTheme;
 import org.qualet.irlredactor.light.LightConfig;
 import org.qualet.irlredactor.light.LightScene;
 import org.qualet.irlredactor.light.PlacedLight;
@@ -77,6 +78,7 @@ public class LightEditorPanel
     private static final int CAT_SHADOWS = 2;
     private static final int CAT_OUTLINE = 3;
     private static final int CAT_AUTO = 4;
+    private static final int CAT_INTERFACE = 5;
     /** Whether the floating settings window is shown (toggled from the left panel,
      *  closed via its own title-bar [x] through this same flag). */
     private final ImBoolean settingsOpen = new ImBoolean(false);
@@ -156,6 +158,11 @@ public class LightEditorPanel
         // Must run after ImGui.newFrame() (it does, via ImGuiRuntime.frame) and
         // before any ImGuizmo.manipulate this frame.
         ImGuizmo.beginFrame();
+
+        // Re-derive the accent-driven colours from the live theme each frame, so a
+        // change in the Interface settings recolours the whole UI instantly.
+        Widgets.refreshAccent();
+        EditorTheme.applyNative(ImGui.getStyle());
 
         float w = ImGui.getIO().getDisplaySizeX();
         float h = ImGui.getIO().getDisplaySizeY();
@@ -690,6 +697,7 @@ public class LightEditorPanel
                 settingsNavItem(CAT_SHADOWS, "irl-redactor.editor.cat.shadows");
                 settingsNavItem(CAT_OUTLINE, "irl-redactor.editor.cat.outline");
                 settingsNavItem(CAT_AUTO, "irl-redactor.editor.cat.auto");
+                settingsNavItem(CAT_INTERFACE, "irl-redactor.editor.cat.interface");
             }
             ImGui.endChild();
 
@@ -703,6 +711,7 @@ public class LightEditorPanel
                     case CAT_SHADOWS -> shadowsCategory();
                     case CAT_OUTLINE -> Widgets.textDisabledWrapped(Lang.t("irl-redactor.editor.outlineSoon"));
                     case CAT_AUTO -> autoCategory();
+                    case CAT_INTERFACE -> editorCategory();
                     default -> presetsCategory();
                 }
             }
@@ -869,6 +878,23 @@ public class LightEditorPanel
         Widgets.textDisabled(Lang.t("irl-redactor.editor.autoLightActive",
             AutoLightManager.activeCount(), AutoLightManager.count()));
         ImGui.endDisabled();
+    }
+
+    /** Editor interface: the theme accent colour + a reset to the default red. */
+    private void editorCategory()
+    {
+        Widgets.text(Lang.t("irl-redactor.editor.accentColor"));
+        ImGui.colorEdit3("##accent", EditorTheme.accent,
+            ImGuiColorEditFlags.NoInputs | ImGuiColorEditFlags.NoLabel);
+
+        ImGui.dummy(0f, 4f);
+        if (Widgets.button("accent_reset", Lang.t("irl-redactor.editor.accentReset"),
+            ImGui.getContentRegionAvail().x, false))
+        {
+            EditorTheme.accent[0] = EditorTheme.DEFAULT_ACCENT[0];
+            EditorTheme.accent[1] = EditorTheme.DEFAULT_ACCENT[1];
+            EditorTheme.accent[2] = EditorTheme.DEFAULT_ACCENT[2];
+        }
     }
 
     // ---- global volumetrics (live) ----------------------------------------
