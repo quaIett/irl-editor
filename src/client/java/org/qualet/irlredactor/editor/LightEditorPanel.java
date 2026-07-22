@@ -106,6 +106,8 @@ public class LightEditorPanel
     // Engine-settings mirrors (LightConfig is plain static fields; toggles need ImBoolean).
     private final ImBoolean cfgCache  = new ImBoolean(LightConfig.shadowCache);
     private final ImBoolean cfgBlocks = new ImBoolean(LightConfig.shadowBlocks);
+    private final ImBoolean cfgShadowsLive   = new ImBoolean(LightConfig.shadowsLive);
+    private final float[]   cfgShadowSoftness = { LightConfig.shadowSoftness };
     private final ImBoolean cfgGuides = new ImBoolean(LightConfig.showGuides);
     private final float[]   cfgRadius = { LightConfig.shadowBlockRadius };
     private final ImBoolean cfgAutoLights    = new ImBoolean(LightConfig.autoLights);
@@ -830,6 +832,14 @@ public class LightEditorPanel
     /** Shadows: quality preset + block-shadow toggles and radius. */
     private void shadowsCategory()
     {
+        // Master on/off for all light shadows, live via the globals UBO (flag bit13).
+        // Everything below still configures the bake; this only gates whether the
+        // shader reads the shadow maps.
+        Widgets.toggleRow("cfg_shadowslive", Lang.t("irl-redactor.editor.shadowsLive"), cfgShadowsLive);
+        LightConfig.shadowsLive = cfgShadowsLive.get();
+
+        ImGui.dummy(0f, 4f);
+
         Widgets.text(Lang.t("irl-redactor.editor.shadowQuality"));
         String[] q = {"LOW", "MED", "HIGH", "ULTRA"};
         float segW = (ImGui.getContentRegionAvail().x - 3f * ITEM_SP_X) / 4f;
@@ -847,6 +857,11 @@ public class LightEditorPanel
 
         Widgets.toggleRow("cfg_blocks", Lang.t("irl-redactor.editor.shadowBlocks"), cfgBlocks);
         LightConfig.shadowBlocks = cfgBlocks.get();
+
+        // Global default penumbra width (a per-light bulb size overrides it), live via
+        // the globals UBO (vlF.z). Range mirrors the addon's shadow_softness 0..0.8.
+        Widgets.trackpad("cfg_shadowsoft", Lang.t("irl-redactor.editor.shadowSoftnessDefault"), cfgShadowSoftness, 0f, 0.8f, "%.2f");
+        LightConfig.shadowSoftness = cfgShadowSoftness[0];
 
         Widgets.toggleRow("cfg_cache", Lang.t("irl-redactor.editor.shadowCache"), cfgCache);
         LightConfig.shadowCache = cfgCache.get();

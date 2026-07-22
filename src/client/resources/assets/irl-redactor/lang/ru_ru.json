@@ -47,6 +47,8 @@
     "irl-redactor.editor.shadowCache": "Кэш теней",
     "irl-redactor.editor.shadowBlocks": "Тени блоков",
     "irl-redactor.editor.shadowBlockRadius": "Радиус теней блоков",
+    "irl-redactor.editor.shadowsLive": "Тени от света",
+    "irl-redactor.editor.shadowSoftnessDefault": "Мягкость (по умолч.)",
     "irl-redactor.editor.showGuides": "Показывать гайды",
     "irl-redactor.editor.autoLights": "Авто-свет от блоков",
     "irl-redactor.editor.autoLightCulling": "Отсекать скрытые",

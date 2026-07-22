@@ -20,10 +20,18 @@
 #define IRLITE_SPECULAR_INTENSITY 1.0 // [0.0 0.25 0.5 0.75 1.0 1.5 2.0 3.0 4.0]
 
 #define IRLITE_SHADOWS                    // baked point/spot shadows (atlas + cube-array)
-#define IRLITE_SHADOW_QUALITY 2 // [0 1 2 3 4]
-#define IRLITE_SHADOW_SIZE 0.10 // [0.0 0.02 0.05 0.10 0.20 0.40 0.80]
-#define IRLITE_SHADOW_BIAS 0.05 // [0.0 0.01 0.02 0.05 0.10 0.20 0.40]
-#define IRLITE_SHADOW_NORMAL_OFFSET 0.05 // [0.0 0.02 0.05 0.10 0.15 0.25 0.40]
+// Calibration constants, NOT options. The `// [..]` annotations were stripped in
+// wave 3: leaving them would keep these registered with Iris, and a value already
+// persisted in <pack>.txt would still be substituted even with the option gone
+// from every screen — so the "hardcoded" value would silently be whatever the
+// user last picked, not the one written here.
+// QUALITY additionally cannot move to the UBO at all: it selects between four
+// different #if bodies (tap counts and offset tables), not a value.
+#define IRLITE_SHADOW_QUALITY 2
+#define IRLITE_SHADOW_BIAS 0.05
+#define IRLITE_SHADOW_NORMAL_OFFSET 0.05
+// Penumbra width fallback; the live value is irlite_vlF.z, see IRLITE_SHADOW_SIZE_LIVE.
+#define IRLITE_SHADOW_SIZE 0.10
 
 // F0 sampling-refactor toggles (compile-time, not in the settings screen; comment one out to A/B against the legacy path)
 //#define IRLITE_SHADOW_IGN               // interleaved gradient noise rotation; OFF by user preference — the sin-hash "film grain" look reads better than IGN's ordered weave (2026-07-02)
@@ -63,9 +71,12 @@
 #define IRLITE_TOON_BANDS 3 // [2 3 4 5 6 8]
 #define IRLITE_TOON_SMOOTH 0.10 // [0.0 0.05 0.10 0.20 0.30 0.50]
 
-#define IRLITE_OUTLINE                    // light-driven rim: depth silhouette + Fresnel halo, back/front + glow (IRLEngine LocalLightOutline)
+// light-driven rim: depth silhouette + Fresnel halo, back/front + glow (IRLEngine
+// LocalLightOutline). The enable is vlC.w bit8 from the mod, NOT a define — see the
+// note above the outline block. The numeric defines below stay as the values used
+// when no mod is driving the globals UBO.
 #define IRLITE_OUTLINE_TARGET 1 // [0 1 2]
-#define IRLITE_OUTLINE_PIXEL_SIZE 2 // [1 2 3 4 5 6]
+#define IRLITE_OUTLINE_PIXEL_SIZE 6 // [1 2 3 4 5 6]
 #define IRLITE_OUTLINE_STRENGTH 0.65 // [0.0 0.1 0.2 0.35 0.5 0.65 0.8 1.0 1.5 2.0 3.0]
 #define IRLITE_OUTLINE_FRESNEL_POWER 2.2 // [1.0 1.2 1.5 1.8 2.0 2.2 2.5 3.0 4.0]
 // each new feature = on/off toggle + strength slider (pack idiom). BACK = base rim strength, slider only (0 = off).
@@ -99,7 +110,9 @@ struct IrliteLight
     vec4 cookie;          // x gobo layer (-1 none), y rotation(rad), z scale, w flags (bit0 invert)
 };
 
-layout(std430, binding = 7) buffer IrliteLights
+// P5 experiment (red line): readonly restrict — lets the compiler sink/dedup the
+// per-light loads; the mod only ever writes this buffer from the CPU side.
+layout(std430, binding = 7) readonly restrict buffer IrliteLights
 {
     uint irlite_lightCount;
     float irlite_vlIntensityRt;   // legacy mirror of irlite_vlA.x (transition; unread here)
@@ -110,24 +123,71 @@ layout(std430, binding = 7) buffer IrliteLights
 
 // ---- VL runtime globals (std140 UBO, binding 7) — mirror of VlGlobalsBuffer.java ----
 // UNIFORM binding 7 is its own namespace, independent of the SSBO binding 7 above. The numeric
-// IRLITE_VL_* #defines stay registered in the settings screen but are inert (except the
-// IRLITE_VL_INTENSITY unbound-UBO fallback) — the live values come from here, no recompile.
+// IRLITE_VL_* #defines stay registered with Iris but are off every screen and inert
+// (except the IRLITE_VL_INTENSITY unbound-UBO fallback) — live values come from here.
 #extension GL_ARB_uniform_buffer_object : enable      // uniform blocks below GLSL 1.40
 #extension GL_ARB_shading_language_420pack : enable   // layout(binding=N) on a uniform block at #version 130
 layout(std140, binding = 7) uniform IrliteVlGlobals
 {
     vec4 irlite_vlA;   // x intensity, y maxDist, z tipBoost, w tipRadius
     vec4 irlite_vlB;   // x noiseAmount, y noiseScale, z noiseSpeed, w frameIndex (0..4095, temporal dither rotation)
-    uvec4 irlite_vlC;  // x stepMax, y shadowStride, z noiseStride, w flags (bit0 shadows, bit1 noise, bit2 blueNoise, bit3 ditherTemporal, bit4 clusterCull, bit5 hiZSkip, bit6 bilateralUpsample)
+    uvec4 irlite_vlC;  // x stepMax, y shadowStride, z noiseStride, w flags (bit0 VL shadows, bit1 noise, bit2 blueNoise, bit3 ditherTemporal, bit4 clusterCull, bit5 hiZSkip, bit6 bilateralUpsample, bit7 GLOBALS VALID, bit8 outline, bit9 outlineFront, bit10 outlineGlow, bits11-12 outlineTarget, bit13 surface/outline shadows DISABLED)
     vec4 irlite_vlD;   // x noiseMorph (0 = morph off, drift only), y bilateral depth sigma in blocks (0 = default), z/w reserved (written as 0)
+    vec4 irlite_vlE;   // outline: x strength, y fresnelPower, z back, w frontStrength
+    vec4 irlite_vlF;   // x outline glowStrength, y outline pixelSize (int-valued float), z shadow light size (penumbra width), w reserved (written as 0)
 };
+
+// Wave 1 (2026-07-21): the outline knobs moved from #define to this UBO, so they
+// are live BBS settings instead of Iris-screen recompiles. Extending the block in
+// the TAIL is binary-safe — std140 offsets 0..63 do not move, and an older GLSL
+// simply reads the first 64 bytes of a larger buffer.
+//
+// Bit 7 = "globals valid", set by the mod on EVERY upload (VlGlobalsBuffer.upload
+// ORs it in, so it cannot be forgotten in a setter). An unbound UBO reads as all
+// zeros -> the bit is false -> every knob below falls back to its compile-time
+// define. The zero-sentinel idiom used for IRLITE_VL_INTENSITY cannot be reused
+// here: 0 is a LEGAL user value for strength/back/front/glow, so "reads 0" and
+// "no data" are indistinguishable without this bit.
+#define IRLITE_GLOBALS_OK ((irlite_vlC.w & 128u) != 0u)
+
+// Fallbacks for the two toggle-gated strengths, folded to 0.0 when the toggle
+// define is absent. Resolving them here keeps the runtime selects below free of
+// preprocessor conditionals inside expressions.
+#ifdef IRLITE_OUTLINE_GLOW
+    #define IRLITE_OUTLINE_GLOW_S_FB IRLITE_OUTLINE_GLOW_STRENGTH
+#else
+    #define IRLITE_OUTLINE_GLOW_S_FB 0.0
+#endif
+#ifdef IRLITE_OUTLINE_FRONT
+    #define IRLITE_OUTLINE_FRONT_S_FB IRLITE_OUTLINE_FRONT_STRENGTH
+#else
+    #define IRLITE_OUTLINE_FRONT_S_FB 0.0
+#endif
+
+// Wave 3 (2026-07-21): the shadow penumbra width and the surface/outline shadow
+// enable are live too. IRLITE_SHADOW_QUALITY / _BIAS / _NORMAL_OFFSET stayed
+// compile-time on purpose. QUALITY *could* move to the UBO, but it selects
+// between four #if bodies and one of them, tier 0, drops the blocker-search loop
+// to a single tap — making it live would turn that unrolled loop bound dynamic
+// (the deferred cost the migration plan flags for shadows). BIAS and NORMAL_OFFSET
+// are acne-calibration constants nobody should be turning in a settings screen.
+// Their `// [..]` option annotations were stripped so no value already persisted
+// in <pack>.txt can still bind to them once they leave every screen.
+#define IRLITE_SHADOW_SIZE_LIVE (IRLITE_GLOBALS_OK ? irlite_vlF.z : IRLITE_SHADOW_SIZE)
+// bit13 is "shadows DISABLED", not enabled, so that the fail-safe direction is
+// ON: an older core that predates this bit writes it as 0, and a pack built
+// against this GLSL then keeps shadows rather than silently dropping them all.
+// FLAG_GLOBALS_VALID (bit7) only vouches that the block was written at all, not
+// that this particular field was — so the enable cannot key off bit7.
+#define IRLITE_SHADOWS_LIVE (!IRLITE_GLOBALS_OK || (irlite_vlC.w & 8192u) == 0u)
 
 // ---- cluster grid (binding 6) — std430 mirror of ClusterGridBuffer.java; per-fragment screen-tile light mask ----
 // Second SSBO in this unit: the binding-7 #extension above already enables SSBOs for the whole program, so nothing extra is needed here.
 #if defined IRLITE_CLUSTER && (defined IRLITE_SURFACE_PASS || defined IRLITE_VL_PASS)
 layout(std430, binding = 6) readonly buffer IrliteCluster {
-    uvec4 irlite_clusterHeader;   // x=gridX, y=gridY, z=flags (1=active, 0=full-loop fallback), w=0
-    uvec2 irlite_clusterMasks[];  // row-major ty*gridX+tx, bottom-left origin; bit i (i<64) = packed light index i
+    uvec4 irlite_clusterHeader;      // x=gridX, y=gridY, z=flags (1=active, 0=full-loop fallback), w=words-per-tile of the wide region (0 = legacy-only mod)
+    uvec2 irlite_clusterMasks[576];  // legacy first-64-bit region (32*18 tiles, row-major ty*gridX+tx, bottom-left origin); still dual-written by the mod
+    uint  irlite_clusterWide[];      // W2 (red line): full-width mask, tile-major [tile * header.w + (i>>5)], bit (i&31) = packed light index i
 };
 
 // Phase 3: map gl_FragCoord to its cluster tile and return the packed 64-light mask for this fragment.
@@ -155,12 +215,33 @@ uvec2 irlite_clusterMaskFetch(vec2 uv)
     return irlite_clusterMasks[ty * gridX + tx];
 }
 
+// W2 (red line): base index of this fragment's tile in the wide region.
+// Callers must have checked header.z != 0 && header.w != 0 (irlClusterOn).
+uint irlite_clusterWideBase()
+{
+    uint gridX = irlite_clusterHeader.x;
+    uint gridY = irlite_clusterHeader.y;
+    uint tx = min(uint(gl_FragCoord.x) * gridX / uint(viewWidth),  gridX - 1u);
+    uint ty = min(uint(gl_FragCoord.y) * gridY / uint(viewHeight), gridY - 1u);
+    return (ty * gridX + tx) * irlite_clusterHeader.w;
+}
+
+// VL-pass variant (reduced-res): tile from the normalized full-screen uv.
+uint irlite_clusterWideBase(vec2 uv)
+{
+    uint gridX = irlite_clusterHeader.x;
+    uint gridY = irlite_clusterHeader.y;
+    uint tx = min(uint(uv.x * float(gridX)), gridX - 1u);
+    uint ty = min(uint(uv.y * float(gridY)), gridY - 1u);
+    return (ty * gridX + tx) * irlite_clusterHeader.w;
+}
+
 #endif
 
 const float IRLITE_PI = 3.14159265;
 
 // Master-gated on IRLITE_SHADOWS so disabling shadows also removes the samplerCubeArray declaration - the one construct a strict #version 130 driver could reject.
-#if defined IRLITE_SHADOWS && (defined IRLITE_SURFACE_PASS || (defined COMPOSITE1 && defined IRLITE_OUTLINE) || (defined IRLITE_VL_PASS && defined IRLITE_VOLUMETRIC && defined IRLITE_VL_SHADOWS))
+#if defined IRLITE_SHADOWS && (defined IRLITE_SURFACE_PASS || defined COMPOSITE1 || (defined IRLITE_VL_PASS && defined IRLITE_VOLUMETRIC && defined IRLITE_VL_SHADOWS))
     #define IRLITE_COMPILE_SHADOWS
 #endif
 
@@ -547,7 +628,7 @@ float irlite_spotShadow(vec3 fragWorld, vec3 normal, IrliteLight light, bool fas
 
 #if IRLITE_SHADOW_QUALITY > 0
     float irlBulb = light.cone.w;
-    float lightSize = min(irlBulb > 0.0 ? irlBulb : IRLITE_SHADOW_SIZE, range * 0.5);
+    float lightSize = min(irlBulb > 0.0 ? irlBulb : IRLITE_SHADOW_SIZE_LIVE, range * 0.5);
     float worldToNdc = fY / dist;
 
     #ifdef IRLITE_SHADOW_PYRAMID
@@ -618,11 +699,18 @@ float irlite_spotShadow(vec3 fragWorld, vec3 normal, IrliteLight light, bool fas
     {
         float penDepthTex = penumbraNdc / texelNdc;
         float evsmRes = float(textureSize(irl_spotEvsm, 0).x);
-        if (penDepthTex >= IRLITE_PREFILTER_MIN_PEN && evsmRes * 2.0 == atlasSize.x)   // size gate: matching irl-core build
+        // Ratio-aware size gate (matching irl-core build): the EVSM base is atlas/2 normally and
+        // atlas/4 at ULTRA (SpotlightDepthAtlas.evsmShift); any other ratio = foreign/stale texture.
+        // The engage threshold scales with the ratio: a coarser base cannot express penumbras
+        // narrower than its own lod-0 Gaussian, so those stay on the gather-PCF below.
+        float evsmDiv = atlasSize.x / max(evsmRes, 1.0);
+        float minPenE = IRLITE_PREFILTER_MIN_PEN * (evsmDiv * 0.5);
+        if (penDepthTex >= minPenE && (evsmDiv == 2.0 || evsmDiv == 4.0))
         {
-            // base Gaussian covers ~2 half-res texels (= 4 depth texels) at lod 0; every mip is re-blurred
-            // on bake, so the width genuinely doubles per lod (contract with SpotShadowEvsm.flushDirty)
-            float lod = clamp(log2(penDepthTex * 0.25), 0.0, float(findMSB(int(tileRes)) - 1));
+            // base Gaussian covers ~2 EVSM texels (= 2*div depth texels) at lod 0; every mip is
+            // re-blurred on bake, so the width genuinely doubles per lod (contract with
+            // SpotShadowEvsm.flushDirty); the chain is one level shorter per extra ratio octave
+            float lod = clamp(log2(penDepthTex / (2.0 * evsmDiv)), 0.0, float(findMSB(int(tileRes)) - findMSB(int(evsmDiv))));
             vec2 lightUV = vec2(ndcX, ndcY) * 0.5 + 0.5;
             vec2 uvE = tileUvMin + lightUV * tileUvSize;
             // clamp half a COARSE-mip texel inside the tile (trilinear reads floor(lod) and ceil(lod));
@@ -643,7 +731,7 @@ float irlite_spotShadow(vec3 fragWorld, vec3 normal, IrliteLight light, bool fas
                             irlite_chebyshev(mm.zw, wn, bn * bn));
             // light-bleeding reduction (Lauritzen linstep; EVSM4 needs only a weak floor)
             vis = clamp((vis - IRLITE_EVSM_BLEED) / (1.0 - IRLITE_EVSM_BLEED), 0.0, 1.0);
-            irlPreW = smoothstep(IRLITE_PREFILTER_MIN_PEN, IRLITE_PREFILTER_MIN_PEN * 1.5, penDepthTex);
+            irlPreW = smoothstep(minPenE, minPenE * 1.5, penDepthTex);
             if (irlPreW >= 1.0) return vis;
             irlPreVis = vis;   // blend zone: fall through to the PCF and mix below
             }
@@ -759,7 +847,7 @@ float irlite_pointShadow(vec3 fragWorld, vec3 normal, IrliteLight light, bool fa
             if (evsmResF * 2.0 == faceRes)
             {
                 float bulbF = light.cone.w;
-                float sizeF = min(bulbF > 0.0 ? bulbF : IRLITE_SHADOW_SIZE, radius * 0.5);
+                float sizeF = min(bulbF > 0.0 ? bulbF : IRLITE_SHADOW_SIZE_LIVE, radius * 0.5);
                 float ftexW = 2.0 * refDist / faceRes;
                 float penF = max(0.5 * sizeF, 1.5 * ftexW);
                 float lodF = clamp(log2(penF / ftexW * 0.25), 0.0, float(findMSB(int(faceRes)) - 1));
@@ -787,7 +875,7 @@ float irlite_pointShadow(vec3 fragWorld, vec3 normal, IrliteLight light, bool fa
 
 #if IRLITE_SHADOW_QUALITY > 0
     float irlBulb = light.cone.w;
-    float lightSize = min(irlBulb > 0.0 ? irlBulb : IRLITE_SHADOW_SIZE, radius * 0.5);
+    float lightSize = min(irlBulb > 0.0 ? irlBulb : IRLITE_SHADOW_SIZE_LIVE, radius * 0.5);
 
     #ifdef IRLITE_SHADOW_PYRAMID
     // Conservative min/max classification on the face-major pyramid (see the spot path).
@@ -963,9 +1051,13 @@ float irlite_pointShadow(vec3 fragWorld, vec3 normal, IrliteLight light, bool fa
 #endif // IRLITE_COMPILE_SHADOWS
 
 // ---- outline (IRLITE_COMPOSITE_PASS) ----
-// (bare ifdef — registers IRLITE_OUTLINE with Iris; if-defined refs are not counted)
+// Gated on the pass alone. There is deliberately NO `#ifdef IRLITE_OUTLINE` here
+// any more: a bare ifdef is what registers a boolean option with Iris, and Iris
+// applies a persisted value from <pack>.txt whether or not the option still sits
+// on a screen. With the option gone from every screen (it lives in BBS now, as
+// vlC.w bit8), a leftover IRLITE_OUTLINE=false would have compiled the whole
+// feature out with no way left to switch it back on. The enable is bit8 only.
 #ifdef COMPOSITE1
-#ifdef IRLITE_OUTLINE
 
 // Actual view-space depth (metres) at a texel via gbufferProjectionInverse.
 float irlite_outlineDepth(ivec2 t)
@@ -982,7 +1074,7 @@ float irlite_outlineDepth(ivec2 t)
 // 4-corner depth-edge detector at ±PIXEL_SIZE: maxBehind × edgeness, smoothstepped.
 float irlite_outlineFactor()
 {
-    int ps = IRLITE_OUTLINE_PIXEL_SIZE;
+    int ps = IRLITE_GLOBALS_OK ? int(irlite_vlF.y) : IRLITE_OUTLINE_PIXEL_SIZE;
     ivec2 tc = ivec2(gl_FragCoord.xy);
     float zC = irlite_outlineDepth(tc);
 
@@ -1012,14 +1104,24 @@ vec3 irlite_outlineInk(vec3 playerPos, vec3 flatNormal)
     vec3 fragWorld = playerPos;
     vec3 v = -normalize(playerPos);
 
-    float fres = pow(clamp(1.0 - abs(dot(n, v)), 0.0, 1.0), IRLITE_OUTLINE_FRESNEL_POWER);
+    // Live knobs (UBO) with the compile-time defines as the unbound fallback.
+    bool  irlGlobalsOk = IRLITE_GLOBALS_OK;
+    float oFresnelP = irlGlobalsOk ? irlite_vlE.y : IRLITE_OUTLINE_FRESNEL_POWER;
+    float oGlowS    = irlGlobalsOk ? (((irlite_vlC.w & 1024u) != 0u) ? irlite_vlF.x : 0.0)   // bit10 = glow
+                                   : IRLITE_OUTLINE_GLOW_S_FB;
+
+    float fres = pow(clamp(1.0 - abs(dot(n, v)), 0.0, 1.0), oFresnelP);
     float silhouette = irlite_outlineFactor() * fres;        // crisp depth-edge rim (grazing only)
-    float glow = 0.0;                                         // soft inner Fresnel halo, picked up by pack bloom
-    #ifdef IRLITE_OUTLINE_GLOW
-        glow = IRLITE_OUTLINE_GLOW_STRENGTH * fres;
-    #endif
+    float glow = oGlowS * fres;                               // soft inner Fresnel halo, picked up by pack bloom
     float contourFactor = silhouette + glow;
     if (contourFactor <= 1e-4) return vec3(0.0);
+
+    // Loop-invariant, so they are hoisted out of the per-light loop below rather
+    // than re-selected per light (the #define version had them as literals).
+    float oBack     = irlGlobalsOk ? irlite_vlE.z : IRLITE_OUTLINE_BACK;
+    float oFrontS   = irlGlobalsOk ? (((irlite_vlC.w & 512u) != 0u) ? irlite_vlE.w : 0.0)    // bit9 = front
+                                   : IRLITE_OUTLINE_FRONT_S_FB;
+    float oStrength = irlGlobalsOk ? irlite_vlE.x : IRLITE_OUTLINE_STRENGTH;
 
     uint count = irlite_lightCount;
     vec3 ink = vec3(0.0);
@@ -1055,24 +1157,24 @@ vec3 irlite_outlineInk(vec3 playerPos, vec3 flatNormal)
         }
 
         #ifdef IRLITE_COMPILE_SHADOWS
-            attenuation *= (light.dirType.w > 0.5)
-                ? irlite_spotShadow(fragWorld, n, light, false)
-                : irlite_pointShadow(fragWorld, n, light, false);
+            if (IRLITE_SHADOWS_LIVE)
+            {
+                attenuation *= (light.dirType.w > 0.5)
+                    ? irlite_spotShadow(fragWorld, n, light, false)
+                    : irlite_pointShadow(fragWorld, n, light, false);
+            }
         #endif
 
         vec3 lightCol = pow(max(light.colorIntensity.rgb, vec3(0.0)), vec3(1.0 / 2.2))
                       * light.colorIntensity.a;
-        float rim = IRLITE_OUTLINE_BACK * (1.0 - ndl);
-        #ifdef IRLITE_OUTLINE_FRONT
-            rim += IRLITE_OUTLINE_FRONT_STRENGTH * ndl;
-        #endif
-        ink += lightCol * (contourFactor * rim * attenuation * IRLITE_OUTLINE_STRENGTH);
+        // front off => oFrontS == 0, so this is exactly the old back-only rim.
+        float rim = oBack * (1.0 - ndl) + oFrontS * ndl;
+        ink += lightCol * (contourFactor * rim * attenuation * oStrength);
     }
 
     return ink * 5.0;
 }
 
-#endif // IRLITE_OUTLINE
 #endif // COMPOSITE1 (outline half)
 
 // ---- surface (IRLITE_SURFACE_PASS) ----
@@ -1111,23 +1213,42 @@ void irlite_lightSurface(vec3 playerPos, vec3 normalM, vec3 nViewPos, float smoo
     vec3 n = normalize(viewToWorld * normalM);
 
     #ifdef IRLITE_CLUSTER
-        uvec2 irliteClusterMask = irlite_clusterMaskFetch();
+        // W2 (red line): full-width word-walk replaces the 64-bit mask. Gated on
+        // header.w so a legacy-only mod (w=0) falls back to the plain full loop.
+        bool irlClusterOn = irlite_clusterHeader.z != 0u && irlite_clusterHeader.w != 0u;
+        uint irlWideBase = irlClusterOn ? irlite_clusterWideBase() : 0u;
+        uint irlWord = 0u;
     #endif
 
     for (uint i = 0u; i < count; i++)
     {
         #ifdef IRLITE_CLUSTER
-            if (i < 64u && (irliteClusterMask[i >> 5u] & (1u << (i & 31u))) == 0u) continue;
+            if (irlClusterOn)
+            {
+                if ((i & 31u) == 0u)
+                {
+                    // One word covers 32 lights; an all-zero word skips them all
+                    // in a single iteration (the for's i++ makes the step 32).
+                    irlWord = irlite_clusterWide[irlWideBase + (i >> 5u)];
+                    if (irlWord == 0u) { i += 31u; continue; }
+                }
+                if ((irlWord & (1u << (i & 31u))) == 0u) continue;
+            }
         #endif
+        // P5 experiment (red line): fetch ONLY posRadius (16 B) for the range
+        // reject; the remaining 80 B of the struct are read after the light
+        // proves in range. An out-of-range light costs one vec4 load instead
+        // of the whole struct. Same rejects, same image — order only.
+        vec4 irlPosRadius = irlite_lights[i].posRadius;
+        vec3 toLight = irlPosRadius.xyz - fragWorld;
+        float radius = irlPosRadius.w;
+        float dist2 = dot(toLight, toLight);
+        if (dist2 >= radius * radius || dist2 < 1e-8) continue;   // cheap reject before the sqrt
+
         IrliteLight light = irlite_lights[i];
         int irlMask = int(light.cone.z + 0.5);             // 0 all, 1 entities only, 2 blocks only
         if (irlMask == 1 && !nonTerrain) continue;         // entities only: skip terrain
         if (irlMask == 2 &&  nonTerrain) continue;         // blocks only:  skip entities
-
-        vec3 toLight = light.posRadius.xyz - fragWorld;
-        float radius = light.posRadius.w;
-        float dist2 = dot(toLight, toLight);
-        if (dist2 >= radius * radius || dist2 < 1e-8) continue;   // cheap reject before the sqrt
         float dist = sqrt(dist2);
 
         vec3 L = toLight / dist;
@@ -1162,10 +1283,13 @@ void irlite_lightSurface(vec3 playerPos, vec3 normalM, vec3 nViewPos, float smoo
             #else
                 bool irlShFast = false;
             #endif
-            attenuation *= (light.dirType.w > 0.5)
-                ? irlite_spotShadow(fragWorld, n, light, irlShFast)
-                : irlite_pointShadow(fragWorld, n, light, irlShFast);
-            if (attenuation <= 0.0) continue;
+            if (IRLITE_SHADOWS_LIVE)
+            {
+                attenuation *= (light.dirType.w > 0.5)
+                    ? irlite_spotShadow(fragWorld, n, light, irlShFast)
+                    : irlite_pointShadow(fragWorld, n, light, irlShFast);
+                if (attenuation <= 0.0) continue;
+            }
         #endif
 
         // RAW LINEAR colour.
@@ -1413,16 +1537,28 @@ vec3 irlite_volumetric(vec3 startWorld, vec3 endWorld, vec3 worldDir, float dith
     vec3 result = vec3(0.0);
 
     #ifdef IRLITE_CLUSTER
-        // Phase 3a VL tile cull (vlC.w bit4, default ON): same mask/continue idiom as the surface
-        // pass, but through the uv fetch — this pass is reduced-res (see irlite_clusterMaskFetch).
-        // Bit off -> all-ones = exact full-loop parity; header flags==0 handled inside the fetch.
-        uvec2 irliteClusterMask = (irlite_vlC.w & 16u) != 0u ? irlite_clusterMaskFetch(texCoord) : uvec2(0xFFFFFFFFu);
+        // Phase 3a VL tile cull (vlC.w bit4, default ON), W2 word-walk via the uv
+        // fetch — this pass is reduced-res. Bit4 off or legacy-only mod (w=0) ->
+        // no masking = exact full-loop parity; flags==0 likewise.
+        bool irlClusterOn = (irlite_vlC.w & 16u) != 0u && irlite_clusterHeader.z != 0u && irlite_clusterHeader.w != 0u;
+        uint irlWideBase = irlClusterOn ? irlite_clusterWideBase(texCoord) : 0u;
+        uint irlWord = 0u;
     #endif
 
     for (uint i = 0u; i < count; i++)
     {
         #ifdef IRLITE_CLUSTER
-            if (i < 64u && (irliteClusterMask[i >> 5u] & (1u << (i & 31u))) == 0u) continue;
+            if (irlClusterOn)
+            {
+                if ((i & 31u) == 0u)
+                {
+                    // One word covers 32 lights; an all-zero word skips them all
+                    // in a single iteration (the for's i++ makes the step 32).
+                    irlWord = irlite_clusterWide[irlWideBase + (i >> 5u)];
+                    if (irlWord == 0u) { i += 31u; continue; }
+                }
+                if ((irlWord & (1u << (i & 31u))) == 0u) continue;
+            }
         #endif
         IrliteLight light = irlite_lights[i];
         vec3 lightVec = light.posRadius.xyz - startWorld;   // light relative to the ray origin
@@ -1790,8 +1926,10 @@ void main() {
         #endif
         dither = useBn ? bn : dither;
 
-        irliteVL = irlite_volumetric(vec3(0.0), playerPos,
-                                     normalize(playerPos), dither);
+        // Anchor the march at the bobbing eye (= ViewToPlayer(vec3(0)) = gbufferModelViewInverse[3].xyz; ~0 with view bobbing off, oscillates with it). The origin must carry the same MVI[3] the endpoint playerPos already does, or the shaft segment slides vs the bob-free lights and VL jitters under view bobbing.
+        vec3 eyePlayer = gbufferModelViewInverse[3].xyz;
+        irliteVL = irlite_volumetric(eyePlayer, playerPos,
+                                     normalize(playerPos - eyePlayer), dither);
     #endif
 
     /* RENDERTARGETS: 10 */
@@ -1923,20 +2061,20 @@ after "#include \"/lib/util/spaceConversion.glsl\""
 >>>
 before "    color = pow(color, vec3(2.2));"
 <<<
-    #if defined IRLITE_ACTIVE && defined IRLITE_OUTLINE
+    #ifdef IRLITE_ACTIVE
         // IRLite backlight rim outline; post-translucent, before pow-2.2. IRLITE_OUTLINE_TARGET gates by gbuffer materialMask: entities = PBR 100..199 or default 254, blocks = 0..99.
+        // Enable + target are live UBO values (vlC.w bit8, bits11-12); the defines
+        // are the unbound-UBO fallback. The colortex6 fetch is now compiled in
+        // unconditionally — macOS is out of scope, so the pack's 8-sampler guard
+        // at the top of this file is not a constraint we design around.
         bool irliteODraw = z0 < 1.0 && z0 > 0.56;
-        #if IRLITE_OUTLINE_TARGET != 0
-            if (irliteODraw) {
-                float irliteOMat = texelFetch(colortex6, texelCoord, 0).g * 255.0;
-                bool irliteOEntity = (irliteOMat > 99.5 && irliteOMat < 199.5) || irliteOMat > 253.5;
-                #if IRLITE_OUTLINE_TARGET == 1
-                    irliteODraw = irliteOEntity;   // only entities
-                #else
-                    irliteODraw = !irliteOEntity;  // only blocks
-                #endif
-            }
-        #endif
+        if (IRLITE_GLOBALS_OK && (irlite_vlC.w & 256u) == 0u) irliteODraw = false;
+        uint irliteOTarget = IRLITE_GLOBALS_OK ? ((irlite_vlC.w >> 11u) & 3u) : uint(IRLITE_OUTLINE_TARGET);
+        if (irliteODraw && irliteOTarget != 0u) {
+            float irliteOMat = texelFetch(colortex6, texelCoord, 0).g * 255.0;
+            bool irliteOEntity = (irliteOMat > 99.5 && irliteOMat < 199.5) || irliteOMat > 253.5;
+            irliteODraw = (irliteOTarget == 1u) ? irliteOEntity : !irliteOEntity;
+        }
         if (irliteODraw) {
             vec3 irliteOPlayerPos = ViewToPlayer(viewPos.xyz);
             vec3 irliteDerivN = cross(dFdx(irliteOPlayerPos), dFdy(irliteOPlayerPos));
@@ -2030,16 +2168,11 @@ VANILLAAO_I PLAYER_SHADOW [IRLIGHTS]
 >>>
 after "        screen.PIXELATED_LIGHTING_SETTINGS=<empty> <empty> PIXELATED_SHADOWS PIXELATED_BLOCKLIGHT PIXELATED_AO PIXEL_SCALE"
 <<<
-        screen.IRLIGHTS=IRLITE_DIFFUSE IRLITE_INTENSITY <empty> <empty> [IRLIGHTS_SPECULAR] [IRLIGHTS_SHADOWS] [IRLIGHTS_TOON] [IRLIGHTS_VOLUMETRIC] [IRLIGHTS_OUTLINE] <empty>
-            screen.IRLIGHTS_SPECULAR=IRLITE_SPECULAR <empty> IRLITE_SPECULAR_INTENSITY <empty>
-            screen.IRLIGHTS_SHADOWS=IRLITE_SHADOWS IRLITE_SHADOW_QUALITY <empty> <empty> IRLITE_SHADOW_SIZE IRLITE_SHADOW_BIAS IRLITE_SHADOW_NORMAL_OFFSET <empty>
-            screen.IRLIGHTS_TOON=IRLITE_TOON <empty> IRLITE_TOON_BANDS IRLITE_TOON_SMOOTH
-            screen.IRLIGHTS_VOLUMETRIC=IRLITE_VOLUMETRIC IRLITE_VL_INTENSITY IRLITE_VL_RESOLUTION IRLITE_VL_STEPS IRLITE_VL_MAX_DIST <empty> <empty> <empty> IRLITE_VL_SHADOWS IRLITE_VL_SHADOW_STRIDE IRLITE_VL_TIP_BOOST IRLITE_VL_TIP_RADIUS <empty> <empty> IRLITE_VL_NOISE IRLITE_VL_NOISE_AMOUNT IRLITE_VL_NOISE_SCALE IRLITE_VL_NOISE_SPEED IRLITE_VL_NOISE_STRIDE <empty>
-            screen.IRLIGHTS_OUTLINE=IRLITE_OUTLINE IRLITE_OUTLINE_TARGET <empty> <empty> IRLITE_OUTLINE_STRENGTH IRLITE_OUTLINE_PIXEL_SIZE IRLITE_OUTLINE_FRESNEL_POWER <empty> <empty> <empty> IRLITE_OUTLINE_BACK <empty> IRLITE_OUTLINE_FRONT IRLITE_OUTLINE_FRONT_STRENGTH IRLITE_OUTLINE_GLOW IRLITE_OUTLINE_GLOW_STRENGTH
+        screen.IRLIGHTS=<empty> <empty> IRLITE_DIFFUSE IRLITE_INTENSITY IRLITE_SPECULAR IRLITE_SPECULAR_INTENSITY IRLITE_VOLUMETRIC IRLITE_VL_RESOLUTION <empty> <empty> IRLITE_TOON <empty> IRLITE_TOON_BANDS IRLITE_TOON_SMOOTH <empty> <empty> IRLITE_SHADOWS
 >>>
 replace "END_STAR_INTENSITY GENERATED_NORMAL_RES"
 <<<
-END_STAR_INTENSITY GENERATED_NORMAL_RES IRLITE_INTENSITY IRLITE_SPECULAR_INTENSITY IRLITE_SHADOW_QUALITY IRLITE_SHADOW_SIZE IRLITE_SHADOW_BIAS IRLITE_SHADOW_NORMAL_OFFSET IRLITE_VL_INTENSITY IRLITE_VL_STEPS IRLITE_VL_SHADOW_STRIDE IRLITE_VL_TIP_BOOST IRLITE_VL_TIP_RADIUS IRLITE_VL_MAX_DIST IRLITE_VL_NOISE_AMOUNT IRLITE_VL_NOISE_SCALE IRLITE_VL_NOISE_SPEED IRLITE_VL_NOISE_STRIDE IRLITE_TOON_BANDS IRLITE_TOON_SMOOTH IRLITE_OUTLINE_TARGET IRLITE_OUTLINE_STRENGTH IRLITE_OUTLINE_PIXEL_SIZE IRLITE_OUTLINE_FRESNEL_POWER IRLITE_OUTLINE_BACK IRLITE_OUTLINE_FRONT_STRENGTH IRLITE_OUTLINE_GLOW_STRENGTH
+END_STAR_INTENSITY GENERATED_NORMAL_RES IRLITE_INTENSITY IRLITE_SPECULAR_INTENSITY IRLITE_TOON_BANDS IRLITE_TOON_SMOOTH
 >>>
 
 # --- option labels + tooltips ---
@@ -2047,19 +2180,8 @@ END_STAR_INTENSITY GENERATED_NORMAL_RES IRLITE_INTENSITY IRLITE_SPECULAR_INTENSI
 after "option.XLIGHT_CURVE.comment=Adjusts how quickly the intensity of blocklight fades away as it travels distance away from the light source."
 <<<
 
-
 screen.IRLIGHTS=§6§lIRLights§r
 screen.IRLIGHTS.comment=Dynamic point and spot lights from the IRLights BBS addon. Requires the IRLights mod to feed the lights — without it these settings do nothing.
-screen.IRLIGHTS_SPECULAR=§bSpecular
-screen.IRLIGHTS_SPECULAR.comment=Specular highlight from IRLights lights.
-screen.IRLIGHTS_SHADOWS=§3Shadows
-screen.IRLIGHTS_SHADOWS.comment=Real-time shadows baked by the IRLights mod for its lights.
-screen.IRLIGHTS_TOON=§aToon
-screen.IRLIGHTS_TOON.comment=Cel-shading style banding of IRLights lighting.
-screen.IRLIGHTS_VOLUMETRIC=§dVolumetric
-screen.IRLIGHTS_VOLUMETRIC.comment=Per-light volumetric beams and haze.
-screen.IRLIGHTS_OUTLINE=§eOutline
-screen.IRLIGHTS_OUTLINE.comment=Light-driven rim outline along lit silhouettes: back/front rim and soft inner glow. Each sub-feature toggles independently.
 
 option.IRLITE_DIFFUSE=§6Diffuse Lighting
 option.IRLITE_DIFFUSE.comment=Surface lighting from IRLights point/spot lights.
@@ -2074,69 +2196,16 @@ option.IRLITE_SPECULAR_INTENSITY=§bSpecular Intensity
 option.IRLITE_SPECULAR_INTENSITY.comment=Multiplier for the IRLights specular highlight.
 
 option.IRLITE_SHADOWS=§3Light Shadows
-option.IRLITE_SHADOWS.comment=Real-time shadows from IRLights lights, baked by the mod into a spot atlas and a point cube-array. §e[*]§r Turning this OFF also removes the related GPU constructs — use it if the pack fails to compile on exotic drivers.
-
-option.IRLITE_SHADOW_QUALITY=§3Shadow Quality
-option.IRLITE_SHADOW_QUALITY.comment=PCSS filtering quality. Higher tiers use more samples for softer, less noisy penumbras.
-value.IRLITE_SHADOW_QUALITY.0=§aHard
-value.IRLITE_SHADOW_QUALITY.1=§eLow
-value.IRLITE_SHADOW_QUALITY.2=§eMedium
-value.IRLITE_SHADOW_QUALITY.3=§cHigh
-value.IRLITE_SHADOW_QUALITY.4=§4§lVery High
-
-option.IRLITE_SHADOW_SIZE=§3Light Size
-option.IRLITE_SHADOW_SIZE.comment=Default light source size in blocks, controls penumbra softness. Used when a light has no per-light bulb size set in the editor.
-
-option.IRLITE_SHADOW_BIAS=§3Shadow Bias
-option.IRLITE_SHADOW_BIAS.comment=Depth bias in blocks. Raise if you see shadow acne, lower if shadows detach from objects.
-
-option.IRLITE_SHADOW_NORMAL_OFFSET=§3Normal Offset
-option.IRLITE_SHADOW_NORMAL_OFFSET.comment=Receiver offset along the surface normal in blocks. Removes the staircase acne pattern without peter-panning. 0.0 disables it.
+option.IRLITE_SHADOWS.comment=§cCompatibility escape hatch, not the normal on/off.§r For everyday use switch shadows in the mod's own settings — that applies instantly. Turning this OFF removes the samplerCubeArray declaration and the whole shadow code path from the compiled shader; reach for it only if the pack fails to compile on an exotic driver. §e[*]§r Requires a shaderpack reload.
 
 option.IRLITE_VOLUMETRIC=§dVolumetric Light
 option.IRLITE_VOLUMETRIC.comment=Per-light volumetric beams (spotlights) and glow (point lights).
-
-option.IRLITE_VL_INTENSITY=§dBeam Intensity
-option.IRLITE_VL_INTENSITY.comment=Multiplier for IRLights volumetric light.
 
 option.IRLITE_VL_RESOLUTION=§dResolution
 option.IRLITE_VL_RESOLUTION.comment=Resolution of the volumetric ray march (its own pass, upsampled afterwards). Half costs a quarter of Full and is the intended default. Quarter is fastest, slightly softer beams.
 value.IRLITE_VL_RESOLUTION.1.0=Full
 value.IRLITE_VL_RESOLUTION.0.5=Half
 value.IRLITE_VL_RESOLUTION.0.25=Quarter
-
-option.IRLITE_VL_STEPS=§dMarch Steps
-option.IRLITE_VL_STEPS.comment=Ray-march steps per light. Higher is smoother but costs performance — every pixel covered by a beam pays for all of its steps.
-
-option.IRLITE_VL_MAX_DIST=§dMax Distance
-option.IRLITE_VL_MAX_DIST.comment=Maximum ray distance in blocks. Longer rays cost more on sky pixels.
-
-option.IRLITE_VL_SHADOWS=§dBeam Shadows
-option.IRLITE_VL_SHADOWS.comment=Occludes the beams per march step against the IRLights shadow maps — god-rays through windows. §e[*]§r Needs Light Shadows enabled.
-
-option.IRLITE_VL_SHADOW_STRIDE=§dShadow Tap Stride
-option.IRLITE_VL_SHADOW_STRIDE.comment=Tap the IRLights shadow maps every Nth march step and reuse the result in between. 2 roughly halves the shadow cost for slightly softer volumetric shadows. 1 = tap every step.
-
-option.IRLITE_VL_TIP_BOOST=§dTip Glow
-option.IRLITE_VL_TIP_BOOST.comment=Extra glow near the light source itself.
-
-option.IRLITE_VL_TIP_RADIUS=§dTip Radius
-option.IRLITE_VL_TIP_RADIUS.comment=Radius of the extra glow around the light source, in blocks.
-
-option.IRLITE_VL_NOISE=§dBeam Noise
-option.IRLITE_VL_NOISE.comment=Animated 3D density noise inside the beams — breaks the uniform cone into drifting puffs of dust and haze.
-
-option.IRLITE_VL_NOISE_AMOUNT=§dNoise Amount
-option.IRLITE_VL_NOISE_AMOUNT.comment=How strongly the noise modulates the beam. Low keeps it mostly uniform, 1 fully breaks it into puffs. Average brightness is preserved.
-
-option.IRLITE_VL_NOISE_SCALE=§dNoise Scale
-option.IRLITE_VL_NOISE_SCALE.comment=Approximate size of the noise puffs, in blocks.
-
-option.IRLITE_VL_NOISE_SPEED=§dDrift Speed
-option.IRLITE_VL_NOISE_SPEED.comment=How fast the puffs drift through the beam, like dust in the air. 0 = static.
-
-option.IRLITE_VL_NOISE_STRIDE=§dNoise Tap Stride
-option.IRLITE_VL_NOISE_STRIDE.comment=Sample the density noise every Nth march step and reuse the value in between. Cheaper at high step counts; may band along the beam without TAA. 1 = every step.
 
 option.IRLITE_TOON=§aToon Shading
 option.IRLITE_TOON.comment=Quantizes IRLights lighting into discrete bands (cel shading).
@@ -2146,37 +2215,4 @@ option.IRLITE_TOON_BANDS.comment=Number of brightness bands.
 
 option.IRLITE_TOON_SMOOTH=§aBand Smoothing
 option.IRLITE_TOON_SMOOTH.comment=Softness of the band edges.
-
-option.IRLITE_OUTLINE=§eRim Outline
-option.IRLITE_OUTLINE.comment=Master toggle for the light-driven rim outline (depth silhouette + glow), tinted by the light colour. Sub-features toggle below.
-
-option.IRLITE_OUTLINE_TARGET=§eTarget
-option.IRLITE_OUTLINE_TARGET.comment=Which surfaces the rim outline draws on. Both = entities and blocks; Only Entities = mobs/players/items/hand; Only Blocks = terrain and block entities. Uses the pack's gbuffer entity tag.
-value.IRLITE_OUTLINE_TARGET.0=§eBoth
-value.IRLITE_OUTLINE_TARGET.1=§eOnly Entities
-value.IRLITE_OUTLINE_TARGET.2=§eOnly Blocks
-
-option.IRLITE_OUTLINE_STRENGTH=§eRim Strength
-option.IRLITE_OUTLINE_STRENGTH.comment=Rim brightness multiplier. 0.65 matches the IRLights diffuse scale.
-
-option.IRLITE_OUTLINE_PIXEL_SIZE=§eRim Thickness
-option.IRLITE_OUTLINE_PIXEL_SIZE.comment=Line thickness in pixels (depth-tap offset).
-
-option.IRLITE_OUTLINE_FRESNEL_POWER=§eFresnel Power
-option.IRLITE_OUTLINE_FRESNEL_POWER.comment=Sharpness of the silhouette rim falloff. Higher values narrow the rim to grazing angles only.
-
-option.IRLITE_OUTLINE_BACK=§eBack Rim
-option.IRLITE_OUTLINE_BACK.comment=Strength of the rim where the light is behind the surface (classic backlight halo). 0 = off.
-
-option.IRLITE_OUTLINE_FRONT=§eFront Catch-Light
-option.IRLITE_OUTLINE_FRONT.comment=Adds a rim on the edge facing the light (catch-light), on top of the back rim.
-
-option.IRLITE_OUTLINE_FRONT_STRENGTH=§eFront Strength
-option.IRLITE_OUTLINE_FRONT_STRENGTH.comment=Brightness of the front catch-light rim.
-
-option.IRLITE_OUTLINE_GLOW=§eInner Glow
-option.IRLITE_OUTLINE_GLOW.comment=Soft Fresnel halo just inside the silhouette; picked up by the pack bloom so light appears to wrap the edge.
-
-option.IRLITE_OUTLINE_GLOW_STRENGTH=§eGlow Strength
-option.IRLITE_OUTLINE_GLOW_STRENGTH.comment=Intensity of the soft inner glow.
 >>>

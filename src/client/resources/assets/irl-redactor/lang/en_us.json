@@ -47,6 +47,8 @@
     "irl-redactor.editor.shadowCache": "Shadow cache",
     "irl-redactor.editor.shadowBlocks": "Block shadows",
     "irl-redactor.editor.shadowBlockRadius": "Block shadow radius",
+    "irl-redactor.editor.shadowsLive": "Light shadows",
+    "irl-redactor.editor.shadowSoftnessDefault": "Softness (default)",
     "irl-redactor.editor.showGuides": "Show guides",
     "irl-redactor.editor.autoLights": "Auto block-lights",
     "irl-redactor.editor.autoLightCulling": "Cull hidden lights",

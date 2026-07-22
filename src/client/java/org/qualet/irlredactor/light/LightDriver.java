@@ -73,6 +73,11 @@ public final class LightDriver
             LightConfig.outlineFrontStrength, LightConfig.outlineGlow, LightConfig.outlineGlowStrength,
             LightConfig.outlinePixelSize);
 
+        // Live shadow knobs (master enable + default penumbra width) -> globals UBO
+        // (vlF.z + flag bit13). Mirrors the BBS addon's LightCollector call 1:1; a
+        // per-light bulb size still overrides the width where set.
+        VlGlobalsBuffer.setShadow(LightConfig.shadowsLive, LightConfig.shadowSoftness);
+
         if (world == null || cameraPos == null)
         {
             return;

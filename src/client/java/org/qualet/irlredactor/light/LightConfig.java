@@ -55,6 +55,16 @@ public final class LightConfig
      *  budgeted (they must run every frame). */
     public static int shadowBakeBudget = 4;
 
+    /** Master on/off for all light shadows — the everyday toggle (the pack's own
+     *  compile-time IRLITE_SHADOWS flag stays on). Pushed to the globals UBO as
+     *  flag bit 13 (inverted sense), so it applies live. Default on. */
+    public static boolean shadowsLive = true;
+    /** Global default shadow penumbra width (light-source size) driving the PCSS
+     *  softness, 0..0.8 (default 0.10 = the pack's compile-time IRLITE_SHADOW_SIZE).
+     *  A per-light bulb size ({@link PlacedLight#bulbSize}) overrides it where set.
+     *  Pushed to the globals UBO (vlF.z) each frame, so it applies live. */
+    public static float shadowSoftness = 0.10f;
+
     // --- Auto block-lights ----------------------------------------------------
     // Automatically place a point light on every light-emitting vanilla block
     // (torch, glowstone, lantern, lava, ...) within range, with hardcoded
