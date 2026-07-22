@@ -38,16 +38,24 @@ import java.util.List;
 public class LightEditorPanel
 {
     private static final float PANEL_W = 360f;
+    /** Left panel floor height: it auto-sizes to content above this, so short tabs
+     *  don't leave a tall void, while the floor keeps it from collapsing and limits
+     *  jitter when switching between the shortest tabs. */
+    private static final float MIN_PANEL_H = 480f;
     private static final float WIN_PAD_X = 12f;
     private static final float ITEM_SP_X = 6f;
 
     /** Gizmo size in clip space (ImGuizmo default 0.1 — smaller = more modest). */
     private static final float GIZMO_SIZE = 0.08f;
 
-    /** Source-list scroll region: row height (selectable 22 + item spacing 6) and
-     *  how many rows are shown before it scrolls. */
+    /** Source-list row height (selectable 22 + item spacing 6). */
     private static final float LIST_ROW_H = 28f;
-    private static final int LIST_VISIBLE_ROWS = 6;
+    /** Minimum source rows kept before the list scrolls. */
+    private static final int LIST_MIN_ROWS = 3;
+    /** Space (px) reserved below the list for the inspector + Settings + footer, so
+     *  the list grows with the source count only into room that keeps the rest
+     *  on-screen (beyond that it scrolls) — lets the panel reach the screen bottom. */
+    private static final float LIST_RESERVE = 420f;
 
     /** Shader-patcher popup (visual prototype; opened from the settings window). */
     private final PatcherPanel patcher = new PatcherPanel();
@@ -156,13 +164,17 @@ public class LightEditorPanel
         // Left-docked panel: sources + the selected light's inspector. Global
         // engine settings live in the separate movable window (drawSettingsWindow).
         ImGui.setNextWindowPos(0f, 0f);
-        ImGui.setNextWindowSize(PANEL_W, h);
+        // Auto-height: the panel hugs its content (width locked to PANEL_W, height
+        // between MIN_PANEL_H and the screen) instead of filling the screen, so a
+        // short tab no longer leaves a tall void above the footer.
+        ImGui.setNextWindowSizeConstraints(PANEL_W, MIN_PANEL_H, PANEL_W, h);
 
         int flags = ImGuiWindowFlags.NoMove
             | ImGuiWindowFlags.NoResize
             | ImGuiWindowFlags.NoCollapse
             | ImGuiWindowFlags.NoTitleBar
-            | ImGuiWindowFlags.NoBringToFrontOnFocus;
+            | ImGuiWindowFlags.NoBringToFrontOnFocus
+            | ImGuiWindowFlags.AlwaysAutoResize;
 
         if (ImGui.begin("##irl_panel", flags))
         {
@@ -190,13 +202,9 @@ public class LightEditorPanel
                 }
             }
 
-            // "Settings" opener + footer, pinned to the bottom of the panel.
-            float footerH = ImGui.getFrameHeightWithSpacing() + ImGui.getTextLineHeightWithSpacing() + 14f;
-            float targetY = h - footerH;
-            if (targetY > ImGui.getCursorPosY())
-            {
-                ImGui.setCursorPosY(targetY);
-            }
+            // "Settings" opener + footer, right after the inspector (the panel
+            // auto-sizes to content now, so there is nothing to pin against).
+            ImGui.dummy(0f, 4f);
             ImGui.separator();
             if (Widgets.button("open_settings", Lang.t("irl-redactor.editor.openSettings"),
                 ImGui.getContentRegionAvail().x, settingsOpen.get()))
@@ -297,8 +305,12 @@ public class LightEditorPanel
         List<PlacedLight> all = LightScene.all();
         if (!all.isEmpty())
         {
-            int visible = Math.min(all.size(), LIST_VISIBLE_ROWS);
-            float listH = visible * LIST_ROW_H + 4f;
+            // Grow the list with the source count so the panel can reach the bottom
+            // of the screen, but cap it so the inspector + footer below stay visible;
+            // beyond that the list scrolls internally.
+            float screenH = ImGui.getIO().getDisplaySizeY();
+            float maxListH = Math.max(LIST_MIN_ROWS * LIST_ROW_H, screenH - LIST_RESERVE);
+            float listH = Math.min(all.size() * LIST_ROW_H + 4f, maxListH);
             if (ImGui.beginChild("##src_list", 0f, listH, true))
             {
                 for (int i = 0; i < all.size(); i++)
