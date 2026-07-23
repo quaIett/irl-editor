@@ -385,9 +385,56 @@ public class LightEditorPanel
         {
             l.x = eye.x; l.y = eye.y; l.z = eye.z;
         }
-        l.name = Lang.t("irl-redactor.editor.sourceName", l.id);
+        l.name = Lang.t("irl-redactor.editor.sourceName", nextSourceNumber());
         LightScene.add(l);
         selected = l;
+    }
+
+    // Matches a default source name — "Источник 3" / "Source 3" in either provided
+    // language (like COPY_SUFFIX) — so its trailing number can be read back.
+    private static final java.util.regex.Pattern SOURCE_NUM =
+        java.util.regex.Pattern.compile("^(?:Источник|Source)\\s+(\\d+)$",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    /** The number a freshly added manual source should carry: the smallest positive
+     *  integer not already used by a default-named source in {@link LightScene}.
+     *
+     *  <p>NOT {@link PlacedLight#id}: that counter is a single global sequence which
+     *  the world-derived auto-lights ({@link org.qualet.irlredactor.light.auto.AutoLightManager})
+     *  advance too — one {@code PlacedLight} per emissive block, minted and evicted as
+     *  the rolling scan runs — so naming from the id made a source added after
+     *  auto-lights were on jump to a large, ever-climbing number instead of the next
+     *  free one. This counts only the manual scene (auto-lights never enter it), so
+     *  the sequence stays 1, 2, 3… regardless of auto-lights, survives a reload (names
+     *  are persisted), and reuses a number freed by deletion.</p> */
+    private static int nextSourceNumber()
+    {
+        java.util.BitSet used = new java.util.BitSet();
+        for (PlacedLight l : LightScene.all())
+        {
+            if (l.name == null)
+            {
+                continue;
+            }
+            java.util.regex.Matcher m = SOURCE_NUM.matcher(l.name.trim());
+            if (m.matches())
+            {
+                try
+                {
+                    used.set(Integer.parseInt(m.group(1)));
+                }
+                catch (NumberFormatException ignored)
+                {
+                    // absurdly long digit run — ignore, it can't be a real slot
+                }
+            }
+        }
+        int n = 1;
+        while (used.get(n))
+        {
+            n++;
+        }
+        return n;
     }
 
     private void duplicateSelected()
