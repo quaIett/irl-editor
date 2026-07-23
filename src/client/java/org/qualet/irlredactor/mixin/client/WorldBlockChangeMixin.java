@@ -1,12 +1,12 @@
 package org.qualet.irlredactor.mixin.client;
 
 import net.minecraft.block.BlockState;
+import net.minecraft.client.world.ClientWorld;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.qualet.irl.light.shadow.BlockShadowCache;
 
 /**
@@ -15,51 +15,49 @@ import org.qualet.irl.light.shadow.BlockShadowCache;
  * edit moves nothing, so a lamp whose only in-range change is terrain would
  * otherwise stay cached and reuse a stale depth map.
  *
- * Only a write that actually swaps the state may invalidate. The server
- * resyncs both interaction blocks after EVERY use — an empty-hand click on a
- * dumb block lands here as setBlockState with the state the client already
- * has. Vanilla discards that write (WorldChunk.setBlockState returns null on
- * identity match), and so do we; without the old==state gate every such click
- * re-collected and re-baked each lamp covering the block. States are interned,
- * so identity compare is exact. Real swaps go through
- * BlockShadowCache.invalidateChange, which additionally drops silhouette-
- * neutral churn (grass->dirt, fluid level ticks, a furnace lighting up)
- * before invalidating the lamps whose collection sphere covers the edit; the
- * next getOrCompute then returns a NEW list instance, which ShadowBaker
+ * Hooks ClientWorld.updateListeners (the client's block-change notifier)
+ * rather than the base World.setBlockState. Two reasons:
+ *
+ *  1. Sinytra Connector compatibility. setBlockState is overloaded on the base
+ *     class (flags, and flags+maxUpdateDepth). Loom bakes the @Inject target
+ *     down to a bare intermediary name with no descriptor; on Fabric that name
+ *     is unique per overload, but Connector remaps it to Mojmap where both
+ *     overloads share the name "setBlock", so Mixin binds the injector to the
+ *     wrong arity and aborts with an InvalidInjectionException. updateListeners
+ *     is not overloaded, so the bare-name remap stays unambiguous.
+ *  2. It hands us old and new state directly, and only fires for real,
+ *     client-visible writes: vanilla discards an identity write upstream
+ *     (WorldChunk.setBlockState returns null on identity match), so a no-op
+ *     resync — e.g. the server re-sending both interaction blocks after an
+ *     empty-hand click on a dumb block — never reaches here. The oldState ==
+ *     newState guard below is a cheap belt-and-braces check (states are
+ *     interned, so identity compare is exact).
+ *
+ * Real swaps go through BlockShadowCache.invalidateChange, which drops
+ * silhouette-neutral churn (grass->dirt, fluid level ticks, a furnace lighting
+ * up) before invalidating the lamps whose collection sphere covers the edit;
+ * the next getOrCompute then returns a NEW list instance, which ShadowBaker
  * detects by reference and re-bakes precisely those lamps.
  *
- * Targets the base World method so the hook fires for every code path that
- * writes a block (vanilla placement, server-sync, BBS edits). Gated on
- * world.isClient so the integrated server's World instances (same JVM in
- * singleplayer) don't touch the render-thread state; the height gate mirrors
- * vanilla's own first reject, where the write also no-ops.
+ * ClientWorld is client-only by construction, so no isClient gate is needed —
+ * the integrated server runs on ServerWorld instances and never lands here.
  */
-@Mixin(World.class)
+@Mixin(ClientWorld.class)
 public class WorldBlockChangeMixin
 {
     @Inject(
-        method = "setBlockState(Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/block/BlockState;II)Z",
+        method = "updateListeners(Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/block/BlockState;Lnet/minecraft/block/BlockState;I)V",
         at = @At("HEAD")
     )
     private void irlite$invalidateBlockShadows(
-        BlockPos pos, BlockState state, int flags, int maxUpdateDepth,
-        CallbackInfoReturnable<Boolean> cir)
+        BlockPos pos, BlockState oldState, BlockState newState, int flags,
+        CallbackInfo ci)
     {
-        World self = (World) (Object) this;
-        // 1.21.11: World.isClient is a private field -> use the public isClient()
-        // method. Gate: skip server-side (integrated-server) writes so the client
-        // render-thread state isn't touched off-thread, and out-of-height writes
-        // (which vanilla no-ops anyway). Proceed only for real client-world edits.
-        if (!self.isClient() || self.isOutOfHeightLimit(pos))
+        if (oldState == newState)
         {
             return;
         }
-        BlockState old = self.getBlockState(pos);
-        if (old == state)
-        {
-            return;
-        }
-        BlockShadowCache.invalidateChange(self, pos, old, state);
+        BlockShadowCache.invalidateChange((ClientWorld) (Object) this, pos, oldState, newState);
         // (Auto block-lights need no signal here: their rolling scan picks up
         //  emitter placement/removal within a cycle — see AutoLightManager.)
     }
