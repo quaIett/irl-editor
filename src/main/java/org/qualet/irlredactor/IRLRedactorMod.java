@@ -12,6 +12,6 @@ public class IRLRedactorMod implements ModInitializer
     @Override
     public void onInitialize()
     {
-        LOGGER.info("IRL Redactor stub loaded.");
+        LOGGER.debug("IRL Redactor stub loaded.");
     }
 }

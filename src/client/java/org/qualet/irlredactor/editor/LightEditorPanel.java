@@ -95,6 +95,12 @@ public class LightEditorPanel
     /** Active inspector tab (one of the TAB_* constants). */
     private int inspectorTab = TAB_PLACEMENT;
 
+    /** Perf/debug controls (dev profiler + hold-bake) are hidden by default. Opt
+     *  back in with {@code -Dirlredactor.debug=true}; the code and the
+     *  {@code -Dirlredactor.profileVl} boot switch stay put — this only decides
+     *  whether the "perf" rows are drawn. */
+    private static final boolean DEBUG_UI = Boolean.getBoolean("irlredactor.debug");
+
     // Perf-section mirrors. Resynced from the source of truth every frame before
     // drawing (unlike the one-directional cfg* mirrors below): holdBake is also
     // flipped outside the panel (world-join arm, "bake now" button), and the
@@ -776,27 +782,33 @@ public class LightEditorPanel
         Widgets.toggleRow("cfg_guides", Lang.t("irl-redactor.editor.showGuides"), cfgGuides);
         LightConfig.showGuides = cfgGuides.get();
 
-        ImGui.dummy(0f, 6f);
-        Widgets.textDisabled(Lang.t("irl-redactor.editor.perf"));
-
-        cfgPerfProfiler.set(VlProfiler.isCollecting());
-        Widgets.toggleRow("cfg_perf_profiler", Lang.t("irl-redactor.editor.perfProfiler"), cfgPerfProfiler);
-        VlProfiler.setCollecting(cfgPerfProfiler.get());
-
-        cfgHoldBake.set(LightConfig.holdBake);
-        Widgets.toggleRow("cfg_perf_hold", Lang.t("irl-redactor.editor.holdBake"), cfgHoldBake);
-        LightConfig.holdBake = cfgHoldBake.get();
-
-        cfgHoldOnJoin.set(LightConfig.holdBakeOnJoin);
-        Widgets.toggleRow("cfg_perf_holdjoin", Lang.t("irl-redactor.editor.holdBakeOnJoin"), cfgHoldOnJoin);
-        LightConfig.holdBakeOnJoin = cfgHoldOnJoin.get();
-
-        if (LightConfig.holdBake)
+        // Dev perf/debug rows: profiler toggle + hold-bake controls. Hidden unless
+        // -Dirlredactor.debug=true (mirrors stay wired, just not surfaced). vlIntensity
+        // and showGuides above are real user knobs and always show.
+        if (DEBUG_UI)
         {
-            Widgets.textDisabled(Lang.t("irl-redactor.editor.holdActive"));
-            if (Widgets.primaryButton("perf_bake_now", Lang.t("irl-redactor.editor.bakeNow"), ImGui.getContentRegionAvail().x))
+            ImGui.dummy(0f, 6f);
+            Widgets.textDisabled(Lang.t("irl-redactor.editor.perf"));
+
+            cfgPerfProfiler.set(VlProfiler.isCollecting());
+            Widgets.toggleRow("cfg_perf_profiler", Lang.t("irl-redactor.editor.perfProfiler"), cfgPerfProfiler);
+            VlProfiler.setCollecting(cfgPerfProfiler.get());
+
+            cfgHoldBake.set(LightConfig.holdBake);
+            Widgets.toggleRow("cfg_perf_hold", Lang.t("irl-redactor.editor.holdBake"), cfgHoldBake);
+            LightConfig.holdBake = cfgHoldBake.get();
+
+            cfgHoldOnJoin.set(LightConfig.holdBakeOnJoin);
+            Widgets.toggleRow("cfg_perf_holdjoin", Lang.t("irl-redactor.editor.holdBakeOnJoin"), cfgHoldOnJoin);
+            LightConfig.holdBakeOnJoin = cfgHoldOnJoin.get();
+
+            if (LightConfig.holdBake)
             {
-                LightConfig.holdBake = false;
+                Widgets.textDisabled(Lang.t("irl-redactor.editor.holdActive"));
+                if (Widgets.primaryButton("perf_bake_now", Lang.t("irl-redactor.editor.bakeNow"), ImGui.getContentRegionAvail().x))
+                {
+                    LightConfig.holdBake = false;
+                }
             }
         }
     }

@@ -35,8 +35,10 @@ public final class LightConfig
     public static volatile boolean holdBake = false;
     /** Arm {@link #holdBake} on every world join (JOIN handler), so entering a
      *  world never fires the initial cold-start bake by itself — the editor's
-     *  "bake now" button releases it when the user is ready to measure. */
-    public static boolean holdBakeOnJoin = true;
+     *  "bake now" button releases it when the user is ready to measure. Dev
+     *  profiling aid, OFF by default so a normal launch bakes on join as usual;
+     *  the hold-bake UI (gated behind -Dirlredactor.debug) flips it when needed. */
+    public static boolean holdBakeOnJoin = false;
     /** Shadow resolution preset ordinal (0 LOW .. 3 ULTRA), default 1 (MEDIUM). */
     public static int shadowQuality = 1;
     /** When on, shadow maps are only re-baked when the scene changes (default on). */
