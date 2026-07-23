@@ -10,6 +10,11 @@
     "KeyboardImGuiMixin",
     "WorldBlockChangeMixin",
     "WorldBlockEntityTickersAccessor",
+    "CameraFreeMixin",
+    "FreeCamInputMixin",
+    "InputAccessor",
+    "FreeCamScrollMixin",
+    "iris.CompositeRendererTimerMixin",
     "iris.ProgramSamplersBuilderMixin",
     "iris.SamplerBindingCubeArrayMixin"
   ],

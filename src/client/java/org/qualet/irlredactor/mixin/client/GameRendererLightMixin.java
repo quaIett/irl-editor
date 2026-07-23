@@ -8,6 +8,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.qualet.irl.light.FramePipeline;
 import org.qualet.irl.light.iris.IrisShadersState;
+import org.qualet.irlredactor.client.diag.VlProfiler;
 import org.qualet.irlredactor.light.LightDriver;
 
 /**
@@ -27,10 +28,20 @@ public class GameRendererLightMixin
         // (ignoreFreeze=true matches the previous always-advancing behaviour).
         float tickDelta = tickCounter.getTickProgress(true);
 
+        // Dev GPU profiler (editor "perf" section): the shadow bake below runs
+        // strictly before the Iris pass sequence, so its GL_TIME_ELAPSED bracket
+        // never nests with the per-pass brackets. collect inside frame() issues
+        // no GL, so the bracket measures bake GPU work only. The core-side
+        // ShadowBakeProbe (installed in IRLRedactorClient) switches this bracket
+        // to bake-* siblings at the bakeInner seams; the endPass below closes
+        // whichever segment is open. Everything no-ops while collection is off.
+        VlProfiler.frameTick();
+        VlProfiler.beginPass(VlProfiler.PASS_BAKE);
         // Depth textures are freed on the dormant transition; re-ramp auto-shadow
         // first-bakes when shaders return instead of baking every cube in one frame.
         FramePipeline.frame(tickDelta, IrisShadersState::shadersDisabled, LightDriver::collect,
             LightDriver::resetAutoShadowRamp);
+        VlProfiler.endPass();
     }
 
     /**

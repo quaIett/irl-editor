@@ -26,10 +26,10 @@ public final class EditorStyle
         s.setWindowBorderSize(1f); // keep only the panel's edge line
         s.setFrameBorderSize(0f);  // no thin outline on elements
 
-        // Crisp pixel edges, like Minecraft/BBS (no smoothing on shapes).
-        s.setAntiAliasedLines(false);
+        // Smooth shape edges to match the non-pixel font (triangles, icons, gizmo).
+        s.setAntiAliasedLines(true);
         s.setAntiAliasedLinesUseTex(false);
-        s.setAntiAliasedFill(false);
+        s.setAntiAliasedFill(true);
 
         s.setWindowPadding(12f, 10f);
         s.setFramePadding(8f, 6f);
@@ -42,23 +42,23 @@ public final class EditorStyle
         col(s, ImGuiCol.Border,          0x11, 0x11, 0x11);
 
         col(s, ImGuiCol.FrameBg,         0x1c, 0x1c, 0x1c);
-        col(s, ImGuiCol.FrameBgHovered,  0x4a, 0x1e, 0x38);
-        col(s, ImGuiCol.FrameBgActive,   0x4a, 0x1e, 0x38);
+        col(s, ImGuiCol.FrameBgHovered,  0x4a, 0x1c, 0x1a);
+        col(s, ImGuiCol.FrameBgActive,   0x4a, 0x1c, 0x1a);
 
         col(s, ImGuiCol.Text,            0xe2, 0xe2, 0xe2);
         col(s, ImGuiCol.TextDisabled,    0x8a, 0x8a, 0x8a);
 
         col(s, ImGuiCol.Button,          0x2a, 0x2a, 0x2a);
         col(s, ImGuiCol.ButtonHovered,   0x3a, 0x3a, 0x3a);
-        col(s, ImGuiCol.ButtonActive,    0xe6, 0x2e, 0x8b);
+        col(s, ImGuiCol.ButtonActive,    0xe4, 0x2b, 0x25);
 
         col(s, ImGuiCol.Header,          0x20, 0x20, 0x20);
         col(s, ImGuiCol.HeaderHovered,   0x2a, 0x2a, 0x2a);
         col(s, ImGuiCol.HeaderActive,    0x20, 0x20, 0x20);
 
-        col(s, ImGuiCol.CheckMark,       0xe6, 0x2e, 0x8b);
-        col(s, ImGuiCol.SliderGrab,      0xe6, 0x2e, 0x8b);
-        col(s, ImGuiCol.SliderGrabActive, 0xe6, 0x2e, 0x8b);
+        col(s, ImGuiCol.CheckMark,       0xe4, 0x2b, 0x25);
+        col(s, ImGuiCol.SliderGrab,      0xe4, 0x2b, 0x25);
+        col(s, ImGuiCol.SliderGrabActive, 0xe4, 0x2b, 0x25);
 
         col(s, ImGuiCol.TitleBg,         0x1b, 0x1b, 0x1b);
         col(s, ImGuiCol.TitleBgActive,   0x1b, 0x1b, 0x1b);

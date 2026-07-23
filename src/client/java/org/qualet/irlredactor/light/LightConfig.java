@@ -23,6 +23,22 @@ public final class LightConfig
 
     /** Draw in-world wireframe gizmos for placed lights (default off). */
     public static boolean showGuides = false;
+
+    // --- Deferred initial shadow bake (editor "perf" section) -----------------
+    /** While true, every light is fed to the engine with shadows OFF: lamps
+     *  upload and render (shadowless, tile -1 — the GLSL early-outs before any
+     *  atlas fetch), and the baker skips them before any tile/cache state is
+     *  touched. Clearing the flag lets each lamp hit the normal first-bake
+     *  path next frame (no manual invalidation needed — lastTile never saw
+     *  them). Per-lamp {@code PlacedLight.shadows} is NOT mutated, so the
+     *  user's own toggles survive the hold. */
+    public static volatile boolean holdBake = false;
+    /** Arm {@link #holdBake} on every world join (JOIN handler), so entering a
+     *  world never fires the initial cold-start bake by itself — the editor's
+     *  "bake now" button releases it when the user is ready to measure. Dev
+     *  profiling aid, OFF by default so a normal launch bakes on join as usual;
+     *  the hold-bake UI (gated behind -Dirlredactor.debug) flips it when needed. */
+    public static boolean holdBakeOnJoin = false;
     /** Shadow resolution preset ordinal (0 LOW .. 3 ULTRA), default 1 (MEDIUM). */
     public static int shadowQuality = 1;
     /** When on, shadow maps are only re-baked when the scene changes (default on). */
@@ -40,6 +56,16 @@ public final class LightConfig
      *  foreign map); dynamic overlays and static-&gt;live copies are never
      *  budgeted (they must run every frame). */
     public static int shadowBakeBudget = 4;
+
+    /** Master on/off for all light shadows — the everyday toggle (the pack's own
+     *  compile-time IRLITE_SHADOWS flag stays on). Pushed to the globals UBO as
+     *  flag bit 13 (inverted sense), so it applies live. Default on. */
+    public static boolean shadowsLive = true;
+    /** Global default shadow penumbra width (light-source size) driving the PCSS
+     *  softness, 0..0.8 (default 0.10 = the pack's compile-time IRLITE_SHADOW_SIZE).
+     *  A per-light bulb size ({@link PlacedLight#bulbSize}) overrides it where set.
+     *  Pushed to the globals UBO (vlF.z) each frame, so it applies live. */
+    public static float shadowSoftness = 0.10f;
 
     // --- Auto block-lights ----------------------------------------------------
     // Automatically place a point light on every light-emitting vanilla block
@@ -79,6 +105,88 @@ public final class LightConfig
      *  first (default 200). Keeps the total light count under
      *  {@code LightBuffer.MAX_LIGHTS} (256) with headroom for manual lights. */
     public static int autoLightMax = 200;
+
+    // --- Global volumetrics (live) ---------------------------------------------
+    // Runtime VL globals, pushed into the binding-7 globals UBO every frame by
+    // LightDriver.collect so UBO-era shader patches read them live without a
+    // recompile. Defaults mirror the Complementary pack's compiled #define
+    // values (IRLITE_VL_*), so an untouched editor looks identical to the pack.
+
+    /** Global volumetric intensity multiplier (default 1.0 = pack default). */
+    public static float vlIntensity = 1.0f;
+    /** Ray-march steps per light in the volumetric pass (default 48). Higher is
+     *  smoother but costs performance on every beam-covered pixel. */
+    public static int vlSteps = 48;
+    /** Maximum volumetric ray distance in blocks (default 96). */
+    public static float vlMaxDist = 96f;
+    /** Per-step shadowing of the VL beams (default on) — UBO flags bit 0. */
+    public static boolean vlShadows = true;
+    /** Tap the shadow maps every Nth march step, reusing the result in between
+     *  (default 2; 1 = every step). Halves the VL shadow cost at 2. */
+    public static int vlShadowStride = 2;
+    /** Extra volumetric glow near the light source itself (default 1.5). */
+    public static float vlTipBoost = 1.5f;
+    /** Radius of the tip glow around the source, in blocks (default 1.5). */
+    public static float vlTipRadius = 1.5f;
+    /** Animated density noise breaking the beams into drifting puffs
+     *  (default on) — UBO flags bit 1. */
+    public static boolean vlNoise = true;
+    /** How strongly the noise modulates the beam, 0.2..1 (default 0.6). */
+    public static float vlNoiseAmount = 0.6f;
+    /** Approximate size of the noise puffs, in blocks (default 2.0). */
+    public static float vlNoiseScale = 2.0f;
+    /** Noise drift speed (default 0.25). Kept a multiple of 0.25 — the shader's
+     *  wind is whole field-periods per its 3600 s time wrap, so in-between values
+     *  would make the fog pop on the wrap (the core setter quantizes too). */
+    public static float vlNoiseSpeed = 0.25f;
+    /** How fast the noise puffs reshape (crossfade morph), 0..3 (default 0 = off;
+     *  enabling costs a second noise tap per refresh — measured pricier than the
+     *  noise itself). 0 = classic drifting-only fog. Kept a multiple of 0.25 for
+     *  the same 3600 s time-wrap reason as the drift speed (core quantizes too). */
+    public static float vlNoiseMorph = 0f;
+    /** Sample the density noise every Nth march step (default 2; 1 = every step). */
+    public static int vlNoiseStride = 2;
+    /** Blue-noise dither of the VL march start instead of the pack's white-ish
+     *  hash (default on) — UBO flags bit 2. */
+    public static boolean vlBlueNoise = true;
+    /** Rotate the dither pattern every frame (default on) — UBO flags bit 3.
+     *  If recorded footage shimmers on moving lamps without TAA, switch off per shot. */
+    public static boolean vlDitherTemporal = true;
+    /** Skip lights per screen tile in the VL march via the cluster grid
+     *  (default on) — UBO flags bit 4. Conservative skip: visually identical,
+     *  pure performance. */
+    public static boolean vlClusterCull = true;
+    /** Skip shadow-map taps for beam chunks provably fully lit or fully in
+     *  shadow via the spot shadow min/max pyramid (default on) — UBO flags
+     *  bit 5. Spot lights only. Conservative skip: visually identical,
+     *  pure performance. */
+    public static boolean vlShadowHiz = true;
+
+    // --- Outline (live, via the globals UBO) -----------------------------------
+    // Fresnel-rim outline, migrated off the Iris shader screen into the UBO so it
+    // applies live on UBO-era patched packs. Defaults mirror the packs' compiled
+    // IRLITE_OUTLINE_* defines and match the BBS addon's outline settings 1:1.
+
+    /** Master outline toggle (default on). */
+    public static boolean outline = true;
+    /** What the outline draws on: 0 all / 1 entities / 2 blocks (default 1). */
+    public static int outlineTarget = 1;
+    /** Outline strength (0..3, default 0.65). */
+    public static float outlineStrength = 0.65f;
+    /** Outline thickness = depth-edge tap offset in pixels (1..6, default 6). */
+    public static int outlinePixelSize = 6;
+    /** Fresnel falloff exponent (1..4, default 2.2). */
+    public static float outlineFresnelPower = 2.2f;
+    /** Backlight rim strength on surfaces facing away (0..2, default 1.0). */
+    public static float outlineBack = 1.0f;
+    /** Front catch-light toggle (default off). */
+    public static boolean outlineFront = false;
+    /** Front catch-light strength (0..1.5, default 0.3). */
+    public static float outlineFrontStrength = 0.3f;
+    /** Inner glow (soft Fresnel halo feeding bloom) toggle (default off). */
+    public static boolean outlineGlow = false;
+    /** Inner glow strength (0..0.75, default 0.12). */
+    public static float outlineGlowStrength = 0.12f;
 
     private LightConfig()
     {}
@@ -146,5 +254,90 @@ public final class LightConfig
     public static int autoLightMax()
     {
         return autoLightMax;
+    }
+
+    public static float vlIntensity()
+    {
+        return vlIntensity;
+    }
+
+    public static int vlSteps()
+    {
+        return vlSteps;
+    }
+
+    public static float vlMaxDist()
+    {
+        return vlMaxDist;
+    }
+
+    public static boolean vlShadows()
+    {
+        return vlShadows;
+    }
+
+    public static int vlShadowStride()
+    {
+        return vlShadowStride;
+    }
+
+    public static float vlTipBoost()
+    {
+        return vlTipBoost;
+    }
+
+    public static float vlTipRadius()
+    {
+        return vlTipRadius;
+    }
+
+    public static boolean vlNoise()
+    {
+        return vlNoise;
+    }
+
+    public static float vlNoiseAmount()
+    {
+        return vlNoiseAmount;
+    }
+
+    public static float vlNoiseScale()
+    {
+        return vlNoiseScale;
+    }
+
+    public static float vlNoiseSpeed()
+    {
+        return vlNoiseSpeed;
+    }
+
+    public static float vlNoiseMorph()
+    {
+        return vlNoiseMorph;
+    }
+
+    public static int vlNoiseStride()
+    {
+        return vlNoiseStride;
+    }
+
+    public static boolean vlBlueNoise()
+    {
+        return vlBlueNoise;
+    }
+
+    public static boolean vlDitherTemporal()
+    {
+        return vlDitherTemporal;
+    }
+
+    public static boolean vlClusterCull()
+    {
+        return vlClusterCull;
+    }
+
+    public static boolean vlShadowHiz()
+    {
+        return vlShadowHiz;
     }
 }

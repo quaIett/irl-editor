@@ -8,6 +8,7 @@ import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.Vec3d;
 import org.qualet.irl.light.LightMath;
+import org.qualet.irlredactor.editor.LightEditorScreen;
 
 /**
  * In-world wireframe guides for the placed lights, gated by
@@ -73,6 +74,14 @@ public final class LightGuideRenderer
 
     private static void renderGuides(WorldRenderContext ctx)
     {
+        // When the editor overlay is up it draws the richer ImGui guides itself
+        // (GuideOverlay) — suppress this in-world wire pass so they don't double up.
+        // With the editor closed this keeps drawing the lightweight world guides.
+        if (LightEditorScreen.isOverlayActive())
+        {
+            return;
+        }
+
         Camera cam = ctx.gameRenderer().getCamera();
         if (cam == null)
         {

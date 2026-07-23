@@ -5,6 +5,7 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ServerInfo;
 import net.minecraft.client.option.KeyBinding;
@@ -16,8 +17,10 @@ import org.lwjgl.glfw.GLFW;
 import org.lwjgl.opengl.GL30;
 import org.qualet.irl.light.IrlSamplers;
 import org.qualet.irl.light.shadow.RedactorEntityCasterSource;
+import org.qualet.irl.light.shadow.ShadowBakeProbe;
 import org.qualet.irl.light.shadow.ShadowEngine;
 import org.qualet.irl.patcher.Patcher;
+import org.qualet.irlredactor.client.diag.VlProfiler;
 import org.qualet.irlredactor.editor.LightEditorScreen;
 import org.qualet.irlredactor.imgui.ImGuiRuntime;
 import org.qualet.irlredactor.patcher.RedactorPatcherHost;
@@ -43,6 +46,7 @@ import java.nio.file.Path;
 public class IRLRedactorClient implements ClientModInitializer
 {
     private static KeyBinding openEditor;
+    private static KeyBinding freeCamera;
 
     /** Keybind category. 1.21.11 replaced the plain String category with a
      *  registered {@link KeyBinding.Category} keyed by an Identifier. */
@@ -55,12 +59,39 @@ public class IRLRedactorClient implements ClientModInitializer
     /** Previous raw (GLFW) state of J, for front-edge detection in a replay. */
     private static boolean rawToggleDown;
 
+    /** Previous raw (GLFW) state of the free-camera bind, for front-edge detection. */
+    private static boolean fcKeyWasDown;
+
+    /** Previous editor-open state, to enable the free camera the moment it opens. */
+    private static boolean fcEditorWasOpen;
+
     @Override
     public void onInitializeClient()
     {
         // Install the patcher host so the shared irl-core patcher can reach the game
         // dir / Iris shaderpacks dir / bundled .irlights (matches the IRLite wiring).
         Patcher.install(new RedactorPatcherHost());
+
+        // Dev GPU profiler (editor "perf" section): wire the core-side bake probe
+        // and the HUD overlay unconditionally — every call is a cheap no-op until
+        // the user flips the runtime toggle (VlProfiler.setCollecting).
+        HudRenderCallback.EVENT.register((ctx, tickDelta) -> VlProfiler.renderHud(ctx));
+        // Free-fly camera "Speed x.x" indicator (no-op while the camera is off).
+        HudRenderCallback.EVENT.register((ctx, tickDelta) -> FreeCamera.renderHud(ctx));
+        ShadowEngine.installBakeProbe(new ShadowBakeProbe()
+        {
+            @Override
+            public void section(String name)
+            {
+                VlProfiler.switchPass(name);
+            }
+
+            @Override
+            public void counter(String key, int amount)
+            {
+                VlProfiler.counter(key, amount);
+            }
+        });
 
         // Install the shadow caster source (vanilla entity dispatcher) + config so the
         // shared irl-core shadow orchestration can reach this mod's per-mod pieces.
@@ -79,6 +110,14 @@ public class IRLRedactorClient implements ClientModInitializer
             CATEGORY
         ));
 
+        freeCamera = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+            "key.irl-redactor.free_camera",
+            InputUtil.Type.KEYSYM,
+            GLFW.GLFW_KEY_F,
+            // 1.21.11: KeyBinding.Category replaced the plain String category (see CATEGORY).
+            CATEGORY
+        ));
+
         // In-world light guides (gated by LightConfig.showGuides).
         LightGuideRenderer.register();
 
@@ -89,12 +128,17 @@ public class IRLRedactorClient implements ClientModInitializer
         {
             currentWorldKey = worldKey(client);
             LightStore.load(currentWorldKey);
+            // Deferred initial bake: entering a world must not fire the cold-start
+            // bake by itself — lights render shadowless until the editor's
+            // "bake now" button clears the hold (perf section; see LightConfig).
+            LightConfig.holdBake = LightConfig.holdBakeOnJoin;
         });
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) ->
         {
             saveCurrentWorld();
             LightScene.clear();
             AutoLightManager.clear();
+            FreeCamera.disable();
             currentWorldKey = null;
         });
     }
@@ -119,6 +163,40 @@ public class IRLRedactorClient implements ClientModInitializer
             AutoLightManager.tick(client.world,
                 client.player.getX(), client.player.getEyeY(), client.player.getZ());
         }
+
+        // Free-fly camera lives inside the editor: it's on by default the moment
+        // the editor opens, and the bound key (default F, read raw — the vanilla
+        // keybind can't fire behind a screen, so no clash with swap-offhand)
+        // toggles it off/on within the session. Auto-off + position reset on close.
+        long fcHandle = client.getWindow().getHandle();
+        boolean fcDown = FreeCamera.isKeyDown(fcHandle, freeCamera);
+        boolean fcEdge = fcDown && !fcKeyWasDown;
+        fcKeyWasDown = fcDown;
+        boolean editorOpen = LightEditorScreen.isOverlayActive();
+        if (editorOpen)
+        {
+            // Enable by default the first tick the editor is open.
+            if (!fcEditorWasOpen && !FreeCamera.isActive())
+            {
+                FreeCamera.toggle();
+            }
+            if (fcEdge && !imguiWantsKeyboard())
+            {
+                FreeCamera.toggle();
+            }
+        }
+        else
+        {
+            // Editor closed: turn the camera off and forget the saved position
+            // (disable() is idempotent, so calling it every tick is fine).
+            FreeCamera.disable();
+        }
+        fcEditorWasOpen = editorOpen;
+        // Drain the vanilla queue so an in-editor F press never leaks out later.
+        while (freeCamera.wasPressed())
+        {
+        }
+        FreeCamera.tickFreeze();
 
         // Drain the keybind queue every tick so a press made during a replay (fly-
         // camera mode, where the keybind does fire) can't leak out as a stale open.
