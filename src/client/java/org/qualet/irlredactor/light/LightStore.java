@@ -83,7 +83,7 @@ public final class LightStore
             {
                 GSON.toJson(lights, new TypeToken<List<PlacedLight>>() {}.getType(), w);
             }
-            IRLRedactorMod.LOGGER.info("Saved {} lights for world '{}'", lights.size(), key);
+            IRLRedactorMod.LOGGER.debug("Saved {} lights for world '{}'", lights.size(), key);
         }
         catch (IOException e)
         {
@@ -138,7 +138,7 @@ public final class LightStore
                 }
                 LightScene.add(l);
             }
-            IRLRedactorMod.LOGGER.info("Loaded {} lights for world '{}'", LightScene.count(), key);
+            IRLRedactorMod.LOGGER.debug("Loaded {} lights for world '{}'", LightScene.count(), key);
         }
         catch (Exception e)
         {

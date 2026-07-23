@@ -61,8 +61,8 @@ dependencies {
 	// Per-version Loom module from mavenLocal: modClientImplementation remaps it from
 	// intermediary to this mod's named mappings; `include` bundles it (JiJ). Publish it
 	// with `gradlew publishToMavenLocal` in ../irl-core before building this mod.
-	modClientImplementation "org.qualet:irl-core:1.1"
-	include "org.qualet:irl-core:1.1"
+	modClientImplementation "org.qualet:irl-core:1.1.3"
+	include "org.qualet:irl-core:1.1.3"
 
 	// imgui-java: binding + LWJGL3 backend (client only). LWJGL itself is provided
 	// by Minecraft, so the backend's transitive LWJGL is excluded to avoid a second
@@ -114,5 +114,31 @@ java {
 jar {
 	from("LICENSE") {
 		rename { "${it}_${project.base.archivesName.get()}" }
+	}
+}
+
+// Nested-jar hygiene. Bumping the irl-core coordinate on an incremental build
+// used to ship BOTH the old and the new core inside the mod jar, and Fabric
+// then silently loads the HIGHER version — i.e. the stale engine. Caught
+// 2026-07-20 when a build carried irl-core 1.1, 1.1.3 and 1.2 at once.
+//
+// Two separate leaks, both needed fixing:
+//  1. processIncludeJars stages includes into build/processIncludeJars and
+//     never prunes, so the previous coordinate's jar lingers there.
+//  2. remapJar appends its nested jars INTO THE EXISTING output jar instead of
+//     writing a fresh one, so a stale entry survives even when staging is
+//     clean (verified: purging staging alone did not fix the bump case).
+// Purging the staging dir and deleting the output jar up front covers both.
+tasks.named("processIncludeJars") {
+	outputs.upToDateWhen { false }
+	doFirst {
+		delete fileTree(outputDirectory)
+	}
+}
+
+tasks.named("remapJar") {
+	outputs.upToDateWhen { false }
+	doFirst {
+		delete archiveFile
 	}
 }
