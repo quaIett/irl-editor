@@ -4,8 +4,11 @@ import imgui.ImColor;
 import imgui.ImDrawList;
 import imgui.ImGui;
 import imgui.ImVec2;
+import imgui.flag.ImGuiInputTextFlags;
+import imgui.flag.ImGuiMouseButton;
 import imgui.flag.ImGuiMouseCursor;
 import imgui.type.ImBoolean;
+import imgui.type.ImString;
 import org.qualet.irlredactor.imgui.EditorTheme;
 
 import java.util.ArrayList;
@@ -65,6 +68,16 @@ public final class Widgets
     private static final Map<String, Double> DRAG_START_VAL_D = new HashMap<>();
     private static final Map<String, Float> DRAG_START_X = new HashMap<>();
     private static final Map<String, Boolean> OPEN = new HashMap<>();
+
+    // ---- middle-click "type an exact value" editor -------------------------
+    // A slider/drag field being middle-clicked swaps into an inline text box so the
+    // user can enter a precise value. Only one field edits at a time (by widget id).
+    private static final ImString EDIT_BUF = new ImString(64);
+    private static final double[] EDIT_OUT = new double[1];
+    private static String editingId = null;
+    private static boolean editFocusPending = false;
+    private static boolean editSeenActive = false;
+    private static float editFieldW = 0f;
 
     /** Recomputes the accent-derived colours from the live {@link EditorTheme}; call
      *  once per frame before drawing so a change to the accent applies immediately. */
@@ -316,6 +329,21 @@ public final class Widgets
      *  bounded fill bar makes no sense. Returns true when the value changed. */
     public static boolean dragValue(String id, String label, float[] v, int idx, float speed, String fmt)
     {
+        if (id.equals(editingId))
+        {
+            boolean ch = false;
+            if (editRow(id, label, 24f))
+            {
+                float nv = (float) EDIT_OUT[0];
+                if (nv != v[idx])
+                {
+                    v[idx] = nv;
+                    ch = true;
+                }
+            }
+            return ch;
+        }
+
         float width = ImGui.getContentRegionAvail().x;
         ImVec2 pos = ImGui.getCursorScreenPos();
         float height = 24f;
@@ -356,6 +384,11 @@ public final class Widgets
         float vw = ImGui.calcTextSize(value).x;
         shadowText(dl, pos.x + width - 9f - vw, textY, COL_VALUE, COL_VALUE_SH, value);
 
+        if (middleClicked())
+        {
+            beginEdit(id, v[idx]);
+        }
+
         return changed;
     }
 
@@ -365,6 +398,21 @@ public final class Widgets
      *  (~8mm at 1e5) on every frame of a drag. */
     public static boolean dragValue(String id, String label, double[] v, int idx, float speed, String fmt)
     {
+        if (id.equals(editingId))
+        {
+            boolean ch = false;
+            if (editRow(id, label, 24f))
+            {
+                double nv = EDIT_OUT[0];
+                if (nv != v[idx])
+                {
+                    v[idx] = nv;
+                    ch = true;
+                }
+            }
+            return ch;
+        }
+
         float width = ImGui.getContentRegionAvail().x;
         ImVec2 pos = ImGui.getCursorScreenPos();
         float height = 24f;
@@ -404,6 +452,11 @@ public final class Widgets
         String value = String.format(Locale.ROOT, fmt, v[idx]);
         float vw = ImGui.calcTextSize(value).x;
         shadowText(dl, pos.x + width - 9f - vw, textY, COL_VALUE, COL_VALUE_SH, value);
+
+        if (middleClicked())
+        {
+            beginEdit(id, v[idx]);
+        }
 
         return changed;
     }
@@ -449,6 +502,21 @@ public final class Widgets
 
     public static boolean trackpad(String id, String label, float[] v, float min, float max, String fmt)
     {
+        if (id.equals(editingId))
+        {
+            boolean ch = false;
+            if (editRow(id, label, TRACKPAD_HEIGHT))
+            {
+                float nv = clamp((float) EDIT_OUT[0], min, max);
+                if (nv != v[0])
+                {
+                    v[0] = nv;
+                    ch = true;
+                }
+            }
+            return ch;
+        }
+
         float width = ImGui.getContentRegionAvail().x;
         ImVec2 pos = ImGui.getCursorScreenPos();
 
@@ -498,6 +566,11 @@ public final class Widgets
         float vw = ImGui.calcTextSize(value).x;
         shadowText(dl, x1 - 9f - vw, textY, COL_VALUE, COL_VALUE_SH, value);
 
+        if (middleClicked())
+        {
+            beginEdit(id, v[0]);
+        }
+
         return changed;
     }
 
@@ -539,6 +612,155 @@ public final class Widgets
         dl.addRectFilled(kx, ky, kx + knobW, ky + knobH, on ? COL_KNOB_ON : COL_KNOB_OFF);
 
         return changed;
+    }
+
+    // ---- middle-click inline value editor ----------------------------------
+
+    /** Opens the inline exact-value editor for {@code id}, seeding the text box with the
+     *  field's current value. Triggered by a middle-click on a slider / drag field. */
+    private static void beginEdit(String id, double current)
+    {
+        editingId = id;
+        editFocusPending = true;
+        editSeenActive = false;
+        String s = numToStr(current);
+        EDIT_BUF.set(s);
+        // Freeze the box width to the seed value's width so the box stays put (and the
+        // value keeps its right-hand position) instead of resizing on every keystroke.
+        editFieldW = ImGui.calcTextSize(s).x;
+    }
+
+    /** True on the frame the hovered slider/drag item is middle-clicked while it is not
+     *  being left-dragged — the gesture that opens the exact-value editor. Must be called
+     *  while the widget's {@code invisibleButton} is still the current item. */
+    private static boolean middleClicked()
+    {
+        return !ImGui.isItemActive()
+            && ImGui.isItemHovered()
+            && ImGui.isMouseClicked(ImGuiMouseButton.Middle);
+    }
+
+    /** Draws the label + inline text box that replace a slider while it is being edited;
+     *  the box is auto-focused and its text pre-selected. Height is padded up to
+     *  {@code rowH} so neighbouring rows don't shift. Returns true on the frame the user
+     *  commits a parseable number (result in {@link #EDIT_OUT}); the editor closes on
+     *  Enter or when focus leaves the box (Escape reverts to the seeded value). */
+    private static boolean editRow(String id, String label, float rowH)
+    {
+        ImVec2 pos = ImGui.getCursorScreenPos();
+        float width = ImGui.getContentRegionAvail().x;
+        float frameH = ImGui.getFrameHeight();
+        float h = Math.max(rowH, frameH);
+
+        ImDrawList dl = ImGui.getWindowDrawList();
+        dl.addRectFilled(pos.x, pos.y, pos.x + width, pos.y + h, COL_BG);
+
+        // Label stays on the left, exactly where the slider draws it.
+        float labelY = pos.y + (h - ImGui.getTextLineHeight()) * 0.5f;
+        shadowText(dl, pos.x + 9f, labelY, COL_LABEL, COL_LABEL_SH, label);
+
+        // Input box hugs the right edge (like the value it replaces), sized to the value
+        // with a little room to type, and clamped so it never runs under the label.
+        float labelReserve = ImGui.calcTextSize(label).x + 18f;
+        float fieldW = Math.max(56f, editFieldW + 16f);
+        fieldW = Math.min(fieldW, width - labelReserve - 9f);
+        fieldW = Math.max(fieldW, 32f);
+        float fieldX = pos.x + width - 9f - fieldW;
+        float fieldY = pos.y + (h - frameH) * 0.5f;
+
+        ImGui.setCursorScreenPos(fieldX, fieldY);
+        ImGui.setNextItemWidth(fieldW);
+
+        boolean committed = false;
+        if (editFocusPending)
+        {
+            ImGui.setKeyboardFocusHere();
+            editFocusPending = false;
+        }
+        int flags = ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.AutoSelectAll;
+        boolean enter = ImGui.inputText("##irledit_" + id, EDIT_BUF, flags);
+        if (ImGui.isItemActive())
+        {
+            editSeenActive = true;
+        }
+        if (enter || (editSeenActive && ImGui.isItemDeactivated()))
+        {
+            editingId = null;
+            editSeenActive = false;
+            Double parsed = parseNum(EDIT_BUF.get());
+            if (parsed != null)
+            {
+                EDIT_OUT[0] = parsed;
+                committed = true;
+            }
+        }
+
+        // Reserve the row's full height below the box (no overlap, so it can't steal the
+        // box's hover) so neighbouring rows don't jump while editing.
+        float belowY = fieldY + frameH;
+        ImGui.setCursorScreenPos(pos.x, belowY);
+        float bottomPad = (pos.y + h) - belowY;
+        if (bottomPad > 0f)
+        {
+            ImGui.dummy(width, bottomPad);
+        }
+        return committed;
+    }
+
+    /** Formats a value for the text box: integers without a decimal point, otherwise up
+     *  to 4 decimals with trailing zeros trimmed (so "1.50" shows as "1.5"). */
+    private static String numToStr(double d)
+    {
+        if (!Double.isInfinite(d) && Math.abs(d) < 1e15 && d == Math.floor(d))
+        {
+            return Long.toString((long) d);
+        }
+        String s = String.format(Locale.ROOT, "%.4f", d);
+        int end = s.length();
+        while (end > 0 && s.charAt(end - 1) == '0')
+        {
+            end--;
+        }
+        if (end > 0 && s.charAt(end - 1) == '.')
+        {
+            end--;
+        }
+        return s.substring(0, end);
+    }
+
+    /** Parses a typed number, tolerating a decimal comma and stray unit characters (e.g.
+     *  the "°" some sliders append). Returns null when nothing numeric was entered. */
+    private static Double parseNum(String s)
+    {
+        if (s == null)
+        {
+            return null;
+        }
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; i < s.length(); i++)
+        {
+            char c = s.charAt(i);
+            if ((c >= '0' && c <= '9') || c == '.' || c == '-' || c == '+' || c == 'e' || c == 'E')
+            {
+                b.append(c);
+            }
+            else if (c == ',')
+            {
+                b.append('.');
+            }
+        }
+        if (b.length() == 0)
+        {
+            return null;
+        }
+        try
+        {
+            return Double.parseDouble(b.toString());
+        }
+        catch (NumberFormatException e)
+        {
+            return null;
+        }
     }
 
     private static float clamp(float v, float lo, float hi)
