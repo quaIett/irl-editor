@@ -8,6 +8,7 @@ import imgui.flag.ImGuiCol;
 import imgui.flag.ImGuiCond;
 import imgui.flag.ImGuiWindowFlags;
 import imgui.type.ImBoolean;
+import org.qualet.irlredactor.imgui.EditorTheme;
 import org.qualet.irl.patcher.IrlPatch;
 import org.qualet.irl.patcher.IrlPatchApplier;
 import org.qualet.irl.patcher.IrlPatchParser;
@@ -50,9 +51,7 @@ public class PatcherPanel
 
     private static final int COL_ICON      = ImColor.rgba(0xb4, 0xb4, 0xb4, 0xff);
     private static final int COL_ICON_HOV  = ImColor.rgba(0xff, 0xff, 0xff, 0xff);
-    private static final int COL_X_HOV     = ImColor.rgba(0xe6, 0x2e, 0x8b, 0xff);
     private static final int COL_LIST_BG   = ImColor.rgba(0x1b, 0x1b, 0x1b, 0xff);
-    private static final int COL_SCROLL    = ImColor.rgba(0xe6, 0x2e, 0x8b, 0xff);
 
     // Status / meta colours (0xRRGGBB).
     private static final int RGB_OK   = 0x55FF55;
@@ -423,13 +422,13 @@ public class PatcherPanel
     // ---- list of files -----------------------------------------------------
 
     /** A bordered, scrollable list of names; returns the (possibly updated) selected index.
-     *  Magenta scrollbar + darker background to match the prototype. */
+     *  Red scrollbar + darker background to match the prototype. */
     private int fileList(String id, List<String> items, int selected, String emptyKey)
     {
         ImGui.pushStyleColor(ImGuiCol.ChildBg, COL_LIST_BG);
-        ImGui.pushStyleColor(ImGuiCol.ScrollbarGrab, COL_SCROLL);
-        ImGui.pushStyleColor(ImGuiCol.ScrollbarGrabHovered, COL_SCROLL);
-        ImGui.pushStyleColor(ImGuiCol.ScrollbarGrabActive, COL_SCROLL);
+        ImGui.pushStyleColor(ImGuiCol.ScrollbarGrab, EditorTheme.accentU32());
+        ImGui.pushStyleColor(ImGuiCol.ScrollbarGrabHovered, EditorTheme.accentU32());
+        ImGui.pushStyleColor(ImGuiCol.ScrollbarGrabActive, EditorTheme.accentU32());
 
         int result = selected;
         if (ImGui.beginChild("##list_" + id, 0f, LIST_H, true))
@@ -519,7 +518,7 @@ public class PatcherPanel
         ImVec2 pos = ImGui.getCursorScreenPos();
         ImGui.invisibleButton("##" + id, size, size);
         boolean clicked = ImGui.isItemClicked();
-        int col = ImGui.isItemHovered() ? COL_X_HOV : COL_ICON;
+        int col = ImGui.isItemHovered() ? EditorTheme.accentU32() : COL_ICON;
 
         ImDrawList dl = ImGui.getWindowDrawList();
         float p = 4f;

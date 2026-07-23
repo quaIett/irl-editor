@@ -145,38 +145,42 @@ public final class ImGuiRuntime
     private static short[] glyphRanges;
 
     /**
-     * Loads the bundled Minecraft default font (with Cyrillic glyphs) so the UI
-     * matches BBS. Oversampling is disabled + pixel-snap on, for crisp pixel edges.
-     * Falls back to a Cyrillic-capable system font, then to the ImGui default.
+     * Loads the UI font: a smooth (non-pixel) Cyrillic-capable sans. Prefers a
+     * bundled {@code inter.ttf} if present (drop one in to switch to Inter), then
+     * the system Segoe UI (interim face), then the ImGui default. Light
+     * oversampling + no pixel-snap give clean anti-aliased text.
      */
     private void loadFonts(ImGuiIO io)
     {
         ImFontAtlas fonts = io.getFonts();
         glyphRanges = fonts.getGlyphRangesCyrillic();
 
+        // Vector-font rendering: horizontal oversampling, no pixel-snap.
         ImFontConfig cfg = new ImFontConfig();
-        cfg.setOversampleH(1);
+        cfg.setOversampleH(2);
         cfg.setOversampleV(1);
-        cfg.setPixelSnapH(true);
+        cfg.setPixelSnapH(false);
 
-        byte[] ttf = readResource("/assets/irl-redactor/fonts/minecraft.ttf");
+        // 1) bundled TTF override — drop an inter.ttf here to switch the face with
+        //    no code change (the interim face is the system Segoe UI below).
+        byte[] ttf = readResource("/assets/irl-redactor/fonts/inter.ttf");
         if (ttf != null)
         {
             fonts.addFontFromMemoryTTF(ttf, 16f, cfg, glyphRanges);
+            return;
         }
-        else
+
+        // 2) system Segoe UI — a clean Cyrillic-capable sans (the interim face).
+        String windir = System.getenv("WINDIR");
+        String segoe = windir == null ? null : windir + "\\Fonts\\segoeui.ttf";
+        if (segoe != null && new File(segoe).isFile())
         {
-            String windir = System.getenv("WINDIR");
-            String segoe = windir == null ? null : windir + "\\Fonts\\segoeui.ttf";
-            if (segoe != null && new File(segoe).isFile())
-            {
-                fonts.addFontFromFileTTF(segoe, 16f, glyphRanges);
-            }
-            else
-            {
-                fonts.addFontDefault();
-            }
+            fonts.addFontFromFileTTF(segoe, 16f, cfg, glyphRanges);
+            return;
         }
+
+        // 3) last resort.
+        fonts.addFontDefault();
     }
 
     private static byte[] readResource(String path)

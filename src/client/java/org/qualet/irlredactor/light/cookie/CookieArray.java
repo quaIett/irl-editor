@@ -153,7 +153,7 @@ public final class CookieArray extends CookieArrayBase
         {
             int layer = nextLayer++;
             uploadLayer(pixels, layer);
-            IRLRedactorMod.LOGGER.info("Cookie loaded '{}' -> layer {}", name, layer);
+            IRLRedactorMod.LOGGER.debug("Cookie loaded '{}' -> layer {}", name, layer);
             return layer;
         }
         finally
