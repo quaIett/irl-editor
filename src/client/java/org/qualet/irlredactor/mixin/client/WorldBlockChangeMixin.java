@@ -15,19 +15,24 @@ import org.qualet.irl.light.shadow.BlockShadowCache;
  * edit moves nothing, so a lamp whose only in-range change is terrain would
  * otherwise stay cached and reuse a stale depth map.
  *
- * BlockShadowCache.invalidateAt(pos) drops the cached block lists of the lamps
- * whose collection sphere covers the edit (a far-away edit invalidates nothing).
- * That is sufficient on its own now that the bake is per-light: the next
- * getOrCompute for an invalidated lamp returns a NEW list instance, which
- * ShadowBaker detects by reference and re-bakes precisely that lamp. (The old
- * global position-only scene hash couldn't see a block edit, so it also needed
- * ShadowBaker.markBlocksDirty() to force a whole-scene GL re-render — no longer
- * the case.)
+ * Only a write that actually swaps the state may invalidate. The server
+ * resyncs both interaction blocks after EVERY use — an empty-hand click on a
+ * dumb block lands here as setBlockState with the state the client already
+ * has. Vanilla discards that write (WorldChunk.setBlockState returns null on
+ * identity match), and so do we; without the old==state gate every such click
+ * re-collected and re-baked each lamp covering the block. States are interned,
+ * so identity compare is exact. Real swaps go through
+ * BlockShadowCache.invalidateChange, which additionally drops silhouette-
+ * neutral churn (grass->dirt, fluid level ticks, a furnace lighting up)
+ * before invalidating the lamps whose collection sphere covers the edit; the
+ * next getOrCompute then returns a NEW list instance, which ShadowBaker
+ * detects by reference and re-bakes precisely those lamps.
  *
  * Targets the base World method so the hook fires for every code path that
  * writes a block (vanilla placement, server-sync, BBS edits). Gated on
  * world.isClient so the integrated server's World instances (same JVM in
- * singleplayer) don't touch the render-thread state.
+ * singleplayer) don't touch the render-thread state; the height gate mirrors
+ * vanilla's own first reject, where the write also no-ops.
  */
 @Mixin(World.class)
 public class WorldBlockChangeMixin
@@ -41,13 +46,17 @@ public class WorldBlockChangeMixin
         CallbackInfoReturnable<Boolean> cir)
     {
         World self = (World) (Object) this;
-        if (self.isClient)
+        if (!self.isClient || self.isOutOfHeightLimit(pos))
         {
-            // Marks the affected lamps' block lists stale; ShadowBaker picks up
-            // the new list instance by reference next frame and re-bakes them.
-            BlockShadowCache.invalidateAt(pos);
-            // (Auto block-lights need no signal here: their rolling scan picks up
-            //  emitter placement/removal within a cycle — see AutoLightManager.)
+            return;
         }
+        BlockState old = self.getBlockState(pos);
+        if (old == state)
+        {
+            return;
+        }
+        BlockShadowCache.invalidateChange(self, pos, old, state);
+        // (Auto block-lights need no signal here: their rolling scan picks up
+        //  emitter placement/removal within a cycle — see AutoLightManager.)
     }
 }
