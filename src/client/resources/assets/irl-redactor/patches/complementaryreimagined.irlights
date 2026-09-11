@@ -1322,6 +1322,15 @@ void irlite_lightSurface(vec3 playerPos, vec3 normalM, vec3 nViewPos, float smoo
 #ifdef IRLITE_VL_PASS
 #ifdef IRLITE_VOLUMETRIC
 
+// Internal verification switches; not shaderpack settings. The GPU harness can
+// disable each change independently while production keeps the optimized path.
+#ifndef IRLITE_VL_COOKIE_HOIST
+    #define IRLITE_VL_COOKIE_HOIST 1
+#endif
+#ifndef IRLITE_VL_ZERO_KNOBS
+    #define IRLITE_VL_ZERO_KNOBS 1
+#endif
+
 // Henyey-Greenstein phase (g>0 forward scatter), normalised to 1/4pi.
 float irlite_phaseHG(float cosTheta, float g)
 {
@@ -1329,6 +1338,33 @@ float irlite_phaseHG(float cosTheta, float g)
     float denom = 1.0 + gg - 2.0 * g * cosTheta;
     return (1.0 / (4.0 * IRLITE_PI)) * (1.0 - gg) / (denom * sqrt(max(denom, 1e-6)));
 }
+
+#if IRLITE_VL_COOKIE_HOIST && defined IRLITE_COMPILE_COOKIE
+// VL-only cookie projection: the light's basis, projection and cookie rotation
+// are prepared once per march. Keep the surface helper and sample arithmetic
+// unchanged, including fragWorld=(startWorld+pos) before subtracting the light.
+float irlite_vlCookieStep(vec3 fragWorld, IrliteLight light, vec3 axis,
+                          vec3 sAxis, vec3 uAxis, float fY, float sc, float cr, float sr)
+{
+    float layer = light.cookie.x;
+    if (layer < 0.0) return 1.0;
+
+    vec3 lp = light.posRadius.xyz;
+    vec3 toR = fragWorld - lp;
+    float eyeZ = -dot(axis, toR);
+    if (eyeZ > -0.001) return 1.0;
+
+    float ndcX = fY * dot(sAxis, toR) / -eyeZ;
+    float ndcY = fY * dot(uAxis, toR) / -eyeZ;
+    vec2 p = vec2(ndcX, ndcY) / sc;
+    p = vec2(cr * p.x - sr * p.y, sr * p.x + cr * p.y);
+
+    vec2 uv = p * 0.5 + 0.5;
+    float m = texture(irl_cookieArray, vec3(uv, layer)).r;
+    if (light.cookie.w >= 0.5) m = 1.0 - m;
+    return m;
+}
+#endif
 
 #ifdef IRLITE_VL_NOISE
 // 2-octave fBm on the pack's Noise3D (noisetex slices, in scope via common.glsl); ~[0,1], mean ~0.5.
@@ -1461,6 +1497,11 @@ float irlite_vlSpotStep(vec3 toR, vec3 sAxis, vec3 uAxis, vec3 axis, float fY,
 
 // toLight = step->light (unnormalized); dist already computed by the march.
 // block = the GLOBAL PointDepthAtlas block, straight from vlParams.w (no per-light decode left).
+// Internal A/B switch, deliberately absent from Iris option screens.
+#ifndef IRLITE_VL_POINT_HOIST
+    #define IRLITE_VL_POINT_HOIST 1
+#endif
+#if !IRLITE_VL_POINT_HOIST
 float irlite_vlPointStep(vec3 toLight, float dist, float radius, int block)
 {
     float refDist = dist - 2.0 * IRLITE_SHADOW_NORMAL_OFFSET;   // normal-offset with normal = L
@@ -1483,6 +1524,46 @@ float irlite_vlPointStep(vec3 toLight, float dist, float radius, int block)
     float stored = texture(irl_pointShadowAtlas, uv).r;
     return (refDepth - bias > stored) ? 0.0 : 1.0;
 }
+#else
+// Block geometry is constant for every tap of this light. Keep the frozen
+// pointAtlasUV arithmetic order; only move these statements out of the march.
+void irlite_vlPointSetup(int block, out vec2 blockMin, out float faceUv, out vec2 halfTexel)
+{
+    int cell, sub, div;
+    if (block < IRL_PT_END0)      { cell = block;                 sub = 0;        div = 1; }
+    else if (block < IRL_PT_END1) { int j = block - IRL_PT_END0;  cell = IRL_PT_CELL1 + j / 4;  sub = j % 4;  div = 2; }
+    else                          { int j = block - IRL_PT_END1;  cell = IRL_PT_CELL2 + j / 16; sub = j % 16; div = 4; }
+    faceUv = 1.0 / (6.0 * float(div));
+    blockMin = vec2(float(cell % 2) * 0.5, float(cell / 2) * (1.0 / 3.0))
+             + vec2(float(sub % div), float(sub / div)) * (vec2(0.5, 1.0 / 3.0) / float(div));
+    vec2 atlasSize = vec2(textureSize(irl_pointShadowAtlas, 0));
+    halfTexel = 0.5 / atlasSize;
+}
+
+float irlite_vlPointStepPrepared(vec3 toLight, float dist, float radius,
+                                vec2 blockMin, float faceUv, vec2 halfTexel)
+{
+    float refDist = dist - 2.0 * IRLITE_SHADOW_NORMAL_OFFSET;   // normal-offset with normal = L
+    if (refDist < 0.001 || refDist > radius) return 1.0;
+
+    vec3 dir = toLight * (-refDist / dist);   // light -> receiver, nudged
+    float near = 0.05;
+    vec3 absDir = abs(dir);
+    float zPersp = max(absDir.x, max(absDir.y, absDir.z));
+    float refDepth = (((radius + near) - 2.0 * radius * near / zPersp) / (radius - near)) * 0.5 + 0.5;
+    if (refDepth < 0.0 || refDepth > 1.0) return 1.0;
+
+    float bias = irlite_depthBias(IRLITE_SHADOW_BIAS, refDist, near, radius);
+    vec2 faceLocalUV;
+    int face = irlite_cubeFaceUV(dir, faceLocalUV);
+    vec2 faceOrigin = blockMin + vec2(float(face % 3), float(face / 3)) * faceUv;
+    vec2 tMin = faceOrigin + halfTexel;
+    vec2 tMax = faceOrigin + vec2(faceUv) - halfTexel;
+    vec2 uv = clamp(faceOrigin + faceLocalUV * faceUv, tMin, tMax);
+    float stored = texture(irl_pointShadowAtlas, uv).r;
+    return (refDepth - bias > stored) ? 0.0 : 1.0;
+}
+#endif // IRLITE_VL_POINT_HOIST
 #endif // IRLITE_COMPILE_SHADOWS
 #endif // IRLITE_VL_SHADOWS
 
@@ -1514,6 +1595,10 @@ vec3 irlite_volumetric(vec3 startWorld, vec3 endWorld, vec3 worldDir, float dith
     #ifdef IRLITE_VL_NOISE
         int vlNoiseStride = clamp(int(irlite_vlC.z), 1, 8);
         bool irlite_vlNoiseOn = (irlite_vlC.w & 2u) != 0u;
+        #if IRLITE_VL_ZERO_KNOBS
+            // With exactly zero modulation, every refresh would be discarded.
+            irlite_vlNoiseOn = irlite_vlNoiseOn && irlite_vlB.x != 0.0;
+        #endif
         // Time-morph (vlD.x, runtime): crossfade between two wind-advected slices of the same
         // field so the puffs RESHAPE instead of only sliding; drift and morph compose. 900-slice
         // cycle: the speed is quantized to 0.25 steps (VlGlobalsBuffer), so 3600 * speed is always
@@ -1637,6 +1722,15 @@ vec3 irlite_volumetric(vec3 startWorld, vec3 endWorld, vec3 worldDir, float dith
             vec2 shTileUvMin = vec2(float(shCell % 4), float(shCell / 4)) * 0.25
                              + vec2(float(shSub % shDiv), float(shSub / shDiv)) * shTileUvSize;
             // point: no decode — vlParams.w (shTile) IS the global PointDepthAtlas block
+            #if IRLITE_VL_POINT_HOIST
+                vec2 shPointBlockMin = vec2(0.0);
+                float shPointFaceUv = 0.0;
+                vec2 shPointHalfTexel = vec2(0.0);
+                if (shHas && !isSpot)
+                {
+                    irlite_vlPointSetup(shTile, shPointBlockMin, shPointFaceUv, shPointHalfTexel);
+                }
+            #endif
             vec3 shS = vec3(0.0);
             vec3 shU = vec3(0.0);
             float shFY = 0.0;
@@ -1735,6 +1829,34 @@ vec3 irlite_volumetric(vec3 startWorld, vec3 endWorld, vec3 worldDir, float dith
             #endif
         #endif
 
+        #if IRLITE_VL_COOKIE_HOIST && defined IRLITE_COMPILE_COOKIE
+            vec3 cookieS = vec3(0.0), cookieU = vec3(0.0);
+            float cookieFY = 0.0, cookieScale = 1.0, cookieCos = 1.0, cookieSin = 0.0;
+            if (isSpot && light.cookie.x >= 0.0)
+            {
+                #ifdef IRLITE_COMPILE_SHADOWS
+                if (shHas)
+                {
+                    // Shadow and cookie use the same normalized axis and basis.
+                    cookieS = shS;
+                    cookieU = shU;
+                    cookieFY = shFY;
+                }
+                else
+                #endif
+                {
+                    float c = clamp(light.cone.x, -1.0, 1.0);
+                    cookieFY = min(c * inversesqrt(max(1.0 - c * c, 1e-12)), 114.58865);
+                    vec3 up = abs(axis.y) > 0.99 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
+                    cookieS = normalize(cross(axis, up));
+                    cookieU = cross(cookieS, axis);
+                }
+                cookieScale = max(light.cookie.z, 1e-3);
+                cookieCos = cos(light.cookie.y);
+                cookieSin = sin(light.cookie.y);
+            }
+        #endif
+
         float transmittance = 1.0;
         vec3 acc = vec3(0.0);
         #ifdef IRLITE_COMPILE_SHADOWS
@@ -1763,7 +1885,12 @@ vec3 irlite_volumetric(vec3 startWorld, vec3 endWorld, vec3 worldDir, float dith
                 atten = falloff * spotAtten;
                 phase = phaseSpot;
                 #ifdef IRLITE_COMPILE_COOKIE
-                    atten *= irlite_cookie(startWorld + pos, light);   // gobo shapes the beam
+                    #if IRLITE_VL_COOKIE_HOIST
+                        atten *= irlite_vlCookieStep(startWorld + pos, light, axis,
+                            cookieS, cookieU, cookieFY, cookieScale, cookieCos, cookieSin);
+                    #else
+                        atten *= irlite_cookie(startWorld + pos, light);   // gobo shapes the beam
+                    #endif
                     if (atten <= 0.0) continue;
                 #endif
             }
@@ -1774,7 +1901,11 @@ vec3 irlite_volumetric(vec3 startWorld, vec3 endWorld, vec3 worldDir, float dith
             }
 
             float lightT = exp(-extinction * dist);
-            float tipGlow = 1.0 + irlite_vlA.z * exp(-(dist * dist) / tipR2);
+            float tipGlow = 1.0;
+            #if IRLITE_VL_ZERO_KNOBS
+            if (irlite_vlA.z != 0.0)
+            #endif
+                tipGlow = 1.0 + irlite_vlA.z * exp(-(dist * dist) / tipR2);
 
             // Per-step occlusion: hard depth tap for god-rays; skipped if no baked map.
             float visibility = 1.0;
@@ -1792,7 +1923,11 @@ vec3 irlite_volumetric(vec3 startWorld, vec3 endWorld, vec3 worldDir, float dith
                                   : isSpot
                                       ? irlite_vlSpotStep(2.0 * IRLITE_SHADOW_NORMAL_OFFSET * L - toLight,
                                                           shS, shU, axis, shFY, range, shTileUvMin, shTileUvSize)
+                                      #if IRLITE_VL_POINT_HOIST
+                                      : irlite_vlPointStepPrepared(toLight, dist, range, shPointBlockMin, shPointFaceUv, shPointHalfTexel);
+                                      #else
                                       : irlite_vlPointStep(toLight, dist, range, shTile);
+                                      #endif
                     }
                     visibility = shadowVis;
                 }
