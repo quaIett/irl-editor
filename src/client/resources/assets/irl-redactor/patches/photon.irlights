@@ -1,6 +1,7 @@
 # IRLights: surface, per-light profiles, independent Lit/Outline Replays.
 @name    Photon lights
 @target  Photon
+@packversion v1.3b
 @irlite  1
 @marker  IRLITE
 

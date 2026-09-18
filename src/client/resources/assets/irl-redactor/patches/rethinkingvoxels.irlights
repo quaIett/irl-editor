@@ -1,6 +1,7 @@
 # IRLights: surface, per-light profiles, independent Lit/Outline Replays.
 @name    RethinkingVoxels lights
 @target  RethinkingVoxels
+@packversion r0.1-beta9
 @irlite  1
 @marker  IRLITE
 
