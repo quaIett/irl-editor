@@ -1,6 +1,7 @@
 # IRLite point + spot lights for Complementary (Reimagined/Unbound, by EminGT).
 @name    Complementary lights
 @target  ComplementaryReimagined
+@packversion r5.9.3
 @irlite  1
 @marker  IRLITE
 
@@ -2433,6 +2434,11 @@ replace "/* DRAWBUFFERS:06 */"
 /* RENDERTARGETS: 0,6,9 */
     gl_FragData[2] = vec4(float(irlite_replayId), gl_FragCoord.z, 0.0, 1.0);
 >>>
+replace "/* DRAWBUFFERS:064 */"
+<<<
+/* RENDERTARGETS: 0,6,4,9 */
+    gl_FragData[3] = vec4(float(irlite_replayId), gl_FragCoord.z, 0.0, 1.0);
+>>>
 @file shaders/program/gbuffers_beaconbeam.glsl
 replace "/* DRAWBUFFERS:06 */"
 <<<
@@ -2468,21 +2474,31 @@ replace "/* DRAWBUFFERS:036 */"
 /* RENDERTARGETS: 0,3,6,9 */
     gl_FragData[3] = vec4(float(irlite_replayId), gl_FragCoord.z, 0.0, 1.0);
 >>>
+replace "/* RENDERTARGETS: 0,3,6,4,13 */"
+<<<
+/* RENDERTARGETS: 0,3,6,4,13,9 */
+    gl_FragData[5] = vec4(float(irlite_replayId), gl_FragCoord.z, 0.0, 1.0);
+>>>
+replace "/* RENDERTARGETS: 0,3,6,13 */"
+<<<
+/* RENDERTARGETS: 0,3,6,13,9 */
+    gl_FragData[4] = vec4(float(irlite_replayId), gl_FragCoord.z, 0.0, 1.0);
+>>>
 replace "/* DRAWBUFFERS:0364 */"
 <<<
 /* RENDERTARGETS: 0,3,6,4,9 */
     gl_FragData[4] = vec4(float(irlite_replayId), gl_FragCoord.z, 0.0, 1.0);
 >>>
 @file shaders/program/gbuffers_hand.glsl
-replace "/* DRAWBUFFERS:06 */"
+replace "/* DRAWBUFFERS:036 */"
 <<<
-/* RENDERTARGETS: 0,6,9 */
-    gl_FragData[2] = vec4(float(irlite_replayId), gl_FragCoord.z, 0.0, 1.0);
->>>
-replace "/* DRAWBUFFERS:064 */"
-<<<
-/* RENDERTARGETS: 0,6,4,9 */
+/* RENDERTARGETS: 0,3,6,9 */
     gl_FragData[3] = vec4(float(irlite_replayId), gl_FragCoord.z, 0.0, 1.0);
+>>>
+replace "/* DRAWBUFFERS:0364 */"
+<<<
+/* RENDERTARGETS: 0,3,6,4,9 */
+    gl_FragData[4] = vec4(float(irlite_replayId), gl_FragCoord.z, 0.0, 1.0);
 >>>
 @file shaders/program/gbuffers_lightning.glsl
 replace "/* DRAWBUFFERS:06 */"
@@ -2529,6 +2545,11 @@ replace "/* DRAWBUFFERS:063 */"
 <<<
 /* RENDERTARGETS: 0,6,3,9 */
     gl_FragData[3] = vec4(float(irlite_replayId), gl_FragCoord.z, 0.0, 1.0);
+>>>
+replace "/* DRAWBUFFERS:0634 */"
+<<<
+/* RENDERTARGETS: 0,6,3,4,9 */
+    gl_FragData[4] = vec4(float(irlite_replayId), gl_FragCoord.z, 0.0, 1.0);
 >>>
 @file shaders/program/gbuffers_water.glsl
 replace "/* DRAWBUFFERS:03 */"
