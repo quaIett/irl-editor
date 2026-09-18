@@ -25,3 +25,8 @@ bin/
 
 # fabric
 run/
+
+# AI assistant memory and local config - not for publication
+/memory/
+/.claude/
+/CLAUDE.md
