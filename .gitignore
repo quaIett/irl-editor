@@ -28,3 +28,8 @@ run/
 
 # build/run logs (transient)
 *.log
+
+# AI assistant memory and local config - not for publication
+/memory/
+/.claude/
+/CLAUDE.md
