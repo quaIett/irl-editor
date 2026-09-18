@@ -3,7 +3,7 @@
 @target  Solas
 @irlite  1
 @marker  IRLITE
-@packversion V3.7
+@packversion V3.7b
 
 +file shaders/deferred2.fsh
 <<<
@@ -2948,8 +2948,9 @@ uniform int irlite_replayId;
 >>>
 
 @file shaders/shaders.properties
-replace "program.world1/shadowcomp.enabled=VX_SUPPORT\n#endif\n"
+replace "program.world-1/shadowcomp.enabled=VX_SUPPORT\nprogram.world1/shadowcomp.enabled=VX_SUPPORT"
 <<<
+program.world-1/shadowcomp.enabled=VX_SUPPORT
 program.world1/shadowcomp.enabled=VX_SUPPORT
 program.world0/deferred2.enabled=IRLITE_VOLUMETRIC
 program.world-1/deferred2.enabled=IRLITE_VOLUMETRIC
@@ -2957,7 +2958,6 @@ program.world1/deferred2.enabled=IRLITE_VOLUMETRIC
 
 #IRLite reduced-res volumetric buffer (deferred2 march, composite1 upsample)
 size.buffer.colortex10=IRLITE_VL_RESOLUTION IRLITE_VL_RESOLUTION
-#endif
 
 # IRLite replay attachment: replace the tag even on translucent draws.
 blend.gbuffers_armor_glint.colortex9=off
