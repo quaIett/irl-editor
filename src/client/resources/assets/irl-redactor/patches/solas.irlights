@@ -377,10 +377,10 @@ struct IrliteLight
     vec4 cookie;          // x gobo layer (-1 none), y rotation(rad), z scale, w flags (bit0 invert)
 };
 
-// The mod only ever writes this buffer from the CPU side, so it is `readonly restrict`.
-// Solas is #version 130, so the memory qualifiers parse fine (unlike BSL #version 120, which strips them).
+// The mod only ever writes this buffer from the CPU side. Plain `buffer` on purpose: readonly/restrict need
+// GLSL 4.20, Iris compiles this pack below that, and AMD/Intel drivers reject them there (NVIDIA lets them pass).
 struct IrliteProfile { vec4 a; vec4 b; uvec4 c; vec4 d; vec4 e; vec4 f; uvec4 meta; };
-layout(std430, binding = 7) readonly restrict buffer IrliteLights
+layout(std430, binding = 7) buffer IrliteLights
 {
     uint irlite_lightCount;
     float irlite_vlIntensityRt;   // legacy mirror of irlite_vlA.x (transition; unread here)
@@ -487,7 +487,7 @@ bool irlite_matchesOutlineReplay(uvec4 meta, uint replay) {
 // ---- cluster grid (binding 6) — std430 mirror of ClusterGridBuffer.java; per-fragment screen-tile light mask ----
 // Second SSBO in this unit: the binding-7 #extension above already enables SSBOs for the whole program, so nothing extra is needed here.
 #if defined IRLITE_CLUSTER && (defined IRLITE_SURFACE_PASS || defined IRLITE_VL_PASS)
-layout(std430, binding = 6) readonly buffer IrliteCluster {
+layout(std430, binding = 6) buffer IrliteCluster {
     uvec4 irlite_clusterHeader;      // x=gridX, y=gridY, z=flags (1=active, 0=full-loop fallback), w=words-per-tile of the wide region (0 = legacy-only mod)
     uvec2 irlite_clusterMasks[576];  // legacy first-64-bit region (32*18 tiles, row-major ty*gridX+tx, bottom-left origin); still dual-written by the mod
     uint  irlite_clusterWide[];      // W2 (red line): full-width mask, tile-major [tile * header.w + (i>>5)], bit (i&31) = packed light index i
