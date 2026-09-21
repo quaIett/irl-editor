@@ -2572,6 +2572,17 @@ uniform int irlite_replayId;
 
 >>>
 
+@file shaders/settings.glsl
+replace "  #define HISTOGRAM_BINS 32 // [32 64 128]\n  #define HISTOGRAM_TARGET 0.5 // [0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9]\n"
+<<<
+  #define HISTOGRAM_BINS 32 // [32 64 128]
+  // IRLights TEMP: keeps HISTOGRAM_BINS constant under BBS shader curves (it sizes arrays); remove once BBS skips it.
+  #if defined HISTOGRAM_BINS
+  #endif
+  #define HISTOGRAM_TARGET 0.5 // [0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9]
+
+>>>
+
 @file shaders/shaders.properties
 replace "uniform.vec4.combined_projection_matrix_inverse_3 = vec4(gbufferProjectionInverse.3.0, gbufferProjectionInverse.3.1, -1.0, (combined_far + combined_near) / (2.0 * combined_far * combined_near))\n#endif\n"
 <<<
